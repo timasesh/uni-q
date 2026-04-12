@@ -14,6 +14,7 @@ import AdvisorWorkTimer from "./components/AdvisorWorkTimer";
 export default function App() {
   const loc = useLocation();
   const isAdvisor = loc.pathname.startsWith("/advisor");
+  const isAdmin = loc.pathname.startsWith("/admin");
   const { advisorId } = useAdvisorContext();
   const { t, lang, setLang } = useI18n();
 
@@ -39,9 +40,12 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
+    // На /admin класс `dark` на <html> выставляет только AdminLayout — иначе этот эффект
+    // (applyAdvisorDark === false) снимает dark после дочернего эффекта и ломает переключатель темы.
+    if (isAdmin) return;
     if (applyAdvisorDark) root.classList.add("dark");
     else root.classList.remove("dark");
-  }, [applyAdvisorDark]);
+  }, [applyAdvisorDark, isAdmin]);
 
   if (loc.pathname.startsWith("/admin")) {
     return <AdminApp />;

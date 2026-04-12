@@ -321,7 +321,7 @@ function insertVisitLogFromTicket(t: any, isRepeat: number) {
        student_first_name, student_last_name, school, specialty, language_section, course,
        created_at, called_at, started_at, finished_at,
        advisor_name, advisor_desk, comment, case_type, is_repeat
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     t.id,
     t.advisor_id ?? null,
