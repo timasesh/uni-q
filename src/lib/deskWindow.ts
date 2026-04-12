@@ -1,4 +1,4 @@
-/** Сколько окон поддерживает схема (`/scheme/1.png` …). */
+/** Сколько окон поддерживает схема (`/scheme/1.webp` …). */
 export const SCHEME_WINDOW_COUNT = 5;
 
 /** Из поля окна менеджера (например «1», «Окно 2») — номер 1…5 для схемы. */
@@ -14,9 +14,9 @@ export function parseDeskWindowNumber(desk: string | null | undefined): number |
 
 /** Общая схема кабинета до вызова к окну. */
 export function schemeImagePathGeneral(): string {
-  return "/scheme/scheme.png";
+  return "/scheme/scheme.webp";
 }
 
 export function schemeImagePathForWindow(n: number): string {
-  return `/scheme/${n}.png`;
+  return `/scheme/${n}.webp`;
 }

@@ -31,6 +31,7 @@ import { useAdminContext, type AdminUser } from "../context/AdminContext";
 import { useManagerContext } from "../context/ManagerContext";
 import { cn } from "../lib/cn";
 import { SCHEME_WINDOW_COUNT, parseDeskWindowNumber, schemeImagePathForWindow } from "../lib/deskWindow";
+import { AppLogo } from "../lib/brand";
 
 export type AdminOutletCtx = { adminDark: boolean; setAdminDark: (v: boolean) => void };
 
@@ -124,8 +125,8 @@ function AdminLogin() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-16 dark:bg-slate-900">
       <div className="w-full max-w-md rounded-2xl border border-violet-200/80 bg-white p-8 shadow-xl shadow-violet-900/10 dark:border-white/10 dark:bg-slate-950">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-600/30">
-            <Settings className="h-6 w-6" aria-hidden />
+          <div className="flex h-12 shrink-0 items-center justify-center rounded-xl border border-violet-200/80 bg-violet-50/80 px-2 py-1 dark:border-white/10 dark:bg-white/5">
+            <AppLogo className="h-10 w-auto max-h-10 max-w-[140px] object-contain" />
           </div>
           <div>
             <h1 className="text-lg font-black text-violet-950 dark:text-white">{t("adminLoginTitle")}</h1>
@@ -2234,8 +2235,8 @@ function AdminLayout() {
         <div className="bg-gradient-to-r from-violet-700 via-purple-700 to-indigo-700 px-4 py-3.5 dark:from-violet-950 dark:via-indigo-950 dark:to-slate-950">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
-                <Settings className="h-5 w-5 text-white" aria-hidden />
+              <div className="flex h-11 shrink-0 items-center justify-center rounded-xl bg-white/15 px-1.5 py-1 ring-1 ring-white/20">
+                <AppLogo className="h-9 w-auto max-h-9 max-w-[120px] object-contain object-center" />
               </div>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-base font-black tracking-tight text-white">{t("adminPanel")}</div>

@@ -12,6 +12,7 @@ import { bookingCallableNow } from "../lib/bookingCallable";
 import { hydrateManagerWorkedFromServer, syncManagerWorkTotalToServer } from "../lib/advisorWorkSync";
 import { formatAdvisorReceptionSummary } from "../lib/formatAdvisorReceptionSummary";
 import { parseBackendDateTime } from "../lib/backendDateTime";
+import { AppLogo } from "../lib/brand";
 
 type Props = {
   managerDark: boolean;
@@ -467,6 +468,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   if (!me) {
     return (
       <div className="mx-auto max-w-md ui-card">
+        <div className="mb-4 flex justify-center">
+          <AppLogo className="h-12 w-auto max-w-[200px] object-contain" />
+        </div>
         <div className="text-lg font-extrabold tracking-tight text-violet-950 dark:text-sky-100">{t("managerLogin")}</div>
         <div className="mt-1 text-xs font-semibold text-violet-800 dark:text-sky-300">
           {t("loginHint")} <span className="font-mono">smirnov</span> / <span className="font-mono">ivanov</span>, {t("loginPasswordHint")}{" "}
@@ -499,7 +503,11 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     <div className="space-y-6">
       <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 p-5 text-white shadow-lg shadow-violet-500/25 dark:from-violet-950 dark:via-indigo-950 dark:to-slate-950">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <div className="mt-0.5 flex h-11 shrink-0 items-center justify-center rounded-xl bg-white/15 px-1.5 py-1 ring-1 ring-white/25">
+              <AppLogo className="h-9 w-auto max-h-9 max-w-[120px] object-contain object-center brightness-0 invert" />
+            </div>
+            <div className="min-w-0">
             <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80">{t("managerPanel")}</div>
             <div className="mt-1 text-xl font-black tracking-tight">{me.name}</div>
             {receptionHeader && (
@@ -512,6 +520,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                 </div>
               </>
             )}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div

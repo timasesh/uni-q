@@ -8,6 +8,7 @@ import { useI18n } from "../i18n";
 import { useManagerContext } from "../context/ManagerContext";
 import { hydrateManagerWorkedFromServer } from "../lib/advisorWorkSync";
 import { SCHOOL_DATA, SCHOOL_NAMES } from "../schools";
+import { AppLogo } from "../lib/brand";
 
 const LANGS = [
   { id: "ru", label: "Рус" },
@@ -168,10 +169,15 @@ export default function AdvisorSettingsPage() {
       </button>
       <div className="ui-card p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-12 shrink-0 items-center rounded-xl border border-violet-100 bg-violet-50/80 px-2 py-1 dark:border-white/10 dark:bg-white/5">
+              <AppLogo className="h-10 w-auto max-w-[160px] object-contain" />
+            </div>
+            <div className="min-w-0">
             <div className="text-xs font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">{t("receptionSettings")}</div>
             <div className="mt-1 text-xl font-black text-violet-950 dark:text-sky-100">{me.name}</div>
             <div className="mt-1 text-sm font-semibold text-violet-800 dark:text-sky-300">Здесь вы задаёте, каких студентов вы принимаете.</div>
+            </div>
           </div>
           <button
             type="button"

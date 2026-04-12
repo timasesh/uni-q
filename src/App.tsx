@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "./i18n";
 import { useManagerContext } from "./context/ManagerContext";
 import ManagerWorkTimer from "./components/ManagerWorkTimer";
+import { AppLogo } from "./lib/brand";
 
 export default function App() {
   const loc = useLocation();
@@ -62,8 +63,8 @@ export default function App() {
         <div className="bg-gradient-to-r from-violet-700 via-purple-700 to-indigo-700 dark:from-violet-950 dark:via-indigo-950 dark:to-slate-950">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
-                <span className="text-lg font-black text-white">Q</span>
+              <div className="flex h-11 shrink-0 items-center justify-center rounded-xl bg-white/15 px-1.5 py-1 ring-1 ring-white/20">
+                <AppLogo className="h-9 w-auto max-h-9 max-w-[120px] object-contain object-center" />
               </div>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-base font-black tracking-tight text-white">uni-q</div>

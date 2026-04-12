@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageCircle, Send, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import { cn } from "../lib/cn";
+import { AppLogo } from "../lib/brand";
 
 const CHATBOT_URL = "https://t.me/uniq_advising_bot";
 
@@ -77,9 +78,14 @@ export default function ChatWidget() {
           className="fixed bottom-6 right-6 z-50 flex h-[min(520px,calc(100vh-5rem))] w-[min(100vw-1.5rem,380px)] flex-col overflow-hidden rounded-2xl border border-violet-200/80 bg-white shadow-2xl dark:border-white/15 dark:bg-slate-900"
         >
           <div className="flex items-center justify-between gap-2 border-b border-violet-100 bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3 dark:border-white/10">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-black text-white">{t("chatWidgetTitle")}</div>
-              <div className="truncate text-[11px] font-semibold text-teal-100">{t("chatWidgetSubtitle")}</div>
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex h-9 shrink-0 items-center rounded-lg bg-white/15 px-1 py-0.5 ring-1 ring-white/20">
+                <AppLogo className="h-7 w-auto max-h-7 max-w-[88px] object-contain brightness-0 invert" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-black text-white">{t("chatWidgetTitle")}</div>
+                <div className="truncate text-[11px] font-semibold text-teal-100">{t("chatWidgetSubtitle")}</div>
+              </div>
             </div>
             <button
               type="button"
