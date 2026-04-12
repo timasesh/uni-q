@@ -4,7 +4,7 @@ import { CheckCircle2, History, LogOut, Settings, UserCheck, X, XCircle } from "
 import { fetchJSON, readJSON } from "../api";
 import type { Advisor, LiveQueue, Ticket } from "../types";
 import { cn } from "../lib/cn";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
 import { useAdvisorContext } from "../context/AdvisorContext";
 import { ticketMatchesAdvisor } from "../lib/advisorScope";
@@ -112,6 +112,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   const { t, lang, setLang } = useI18n();
   const { setAdvisorId } = useAdvisorContext();
   const nav = useNavigate();
+  const location = useLocation();
   const [me, setMe] = useState<Advisor | null>(null);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -126,7 +127,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   const [autoCallAfterDone, setAutoCallAfterDone] = useState(false);
   const autoCallInFlight = useRef(false);
   const [queueTimeTick, setQueueTimeTick] = useState(0);
-  const [callBookedLoading, setCallBookedLoading] = useState<number | null>(null);
+  const [rowCallLoading, setRowCallLoading] = useState<number | null>(null);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyDate, setHistoryDate] = useState(() => localYmd());
@@ -149,8 +150,9 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   }, []);
 
   useEffect(() => {
+    if (location.pathname !== "/advisor") return;
     void refreshMe();
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (me) setAdvisorId(me.id);
@@ -232,13 +234,24 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   };
 
   const callBooked = async (ticketId: number) => {
-    setCallBookedLoading(ticketId);
+    setRowCallLoading(ticketId);
     try {
       const res = await fetchJSON(`/api/tickets/${ticketId}/call-booked`, { method: "POST" });
       const js = await readJSON<any>(res);
       if (!res.ok) alert(js?.error || "Не удалось вызвать");
     } finally {
-      setCallBookedLoading(null);
+      setRowCallLoading(null);
+    }
+  };
+
+  const callToMyDesk = async (ticketId: number) => {
+    setRowCallLoading(ticketId);
+    try {
+      const res = await fetchJSON(`/api/tickets/${ticketId}/call-to-my-desk`, { method: "POST" });
+      const js = await readJSON<any>(res);
+      if (!res.ok) alert(js?.error || "Не удалось вызвать");
+    } finally {
+      setRowCallLoading(null);
     }
   };
 
@@ -553,13 +566,20 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
               {t("callNext")}
             </button>
           </div>
+          {showAllQueue && (
+            <div className="border-b border-violet-100 bg-violet-50/80 px-5 py-3 text-xs font-semibold text-violet-900 dark:border-white/10 dark:bg-blue-950/40 dark:text-sky-200">
+              {t("showAllQueueCallHint")}
+            </div>
+          )}
           <div className="divide-y divide-violet-100 dark:divide-white/10">
             {waitingForDisplay.slice(0, 15).map((tk) => {
                 const slot = (tk as Ticket).preferred_slot_at;
                 const inMyScope = me ? ticketMatchesAdvisor(me, tk) : false;
-                const canCallBooked =
-                  Boolean(slot) && inMyScope && bookingCallableNow(slot, Date.now());
-                const showBookedBtn = Boolean(slot) && inMyScope;
+                const nowMs = Date.now();
+                const canCallThis = bookingCallableNow(slot, nowMs);
+                const showBookedBtn = !showAllQueue && Boolean(slot) && inMyScope;
+                const canCallBooked = showBookedBtn && canCallThis;
+                const showClaimBtn = showAllQueue && canCallThis;
                 return (
                   <div
                     key={tk.id}
@@ -582,7 +602,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                         {slot && (
                           <div className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
                             {t("bookingQueueBadge")}: {new Date(String(slot)).toLocaleString()}
-                            {!bookingCallableNow(slot, Date.now()) && (
+                            {!bookingCallableNow(slot, nowMs) && (
                               <span className="ml-2 font-extrabold text-violet-600 dark:text-violet-400">
                                 · {t("bookingCallFromTime").replace("{time}", timeHHMM(String(slot)))}
                               </span>
@@ -590,17 +610,30 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                           </div>
                         )}
                       </div>
-                      {showBookedBtn && (
-                        <button
-                          type="button"
-                          disabled={!canCallBooked || callBookedLoading === tk.id}
-                          onClick={() => void callBooked(tk.id)}
-                          className="shrink-0 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/50"
-                          title={!canCallBooked ? t("bookingCallNotYetHint") : t("callBookedBtn")}
-                        >
-                          {callBookedLoading === tk.id ? t("loading") : t("callBookedBtn")}
-                        </button>
-                      )}
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        {showBookedBtn && (
+                          <button
+                            type="button"
+                            disabled={!canCallBooked || rowCallLoading === tk.id}
+                            onClick={() => void callBooked(tk.id)}
+                            className="rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                            title={!canCallBooked ? t("bookingCallNotYetHint") : t("callBookedBtn")}
+                          >
+                            {rowCallLoading === tk.id ? t("loading") : t("callBookedBtn")}
+                          </button>
+                        )}
+                        {showClaimBtn && (
+                          <button
+                            type="button"
+                            disabled={rowCallLoading === tk.id}
+                            onClick={() => void callToMyDesk(tk.id)}
+                            className="rounded-xl border-2 border-emerald-400 bg-emerald-500 px-3 py-2 text-xs font-extrabold text-white shadow-sm shadow-emerald-500/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
+                            title={t("callStudentToMe")}
+                          >
+                            {rowCallLoading === tk.id ? t("loading") : t("callStudentToMe")}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

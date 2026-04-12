@@ -42,6 +42,7 @@ export default function StudentPage() {
   /** Запись по выбранному профилю (после выбора школы · курса · отделения) */
   const [lineReg, setLineReg] = useState<{ open: boolean; matchesAny: boolean } | null>(null);
   const [lineRegLoading, setLineRegLoading] = useState(false);
+  const [liveQueueEpoch, setLiveQueueEpoch] = useState(0);
   const [live, setLive] = useState<LiveQueue | null>(null);
   const [myTicket, setMyTicket] = useState<Ticket | null>(null);
   const [loadingTicket, setLoadingTicket] = useState(false);
@@ -96,7 +97,10 @@ export default function StudentPage() {
   useEffect(() => {
     const s = io({ transports: ["websocket"] });
     sockRef.current = s;
-    s.on("queue:update", (payload: LiveQueue) => setLive(payload));
+    s.on("queue:update", (payload: LiveQueue) => {
+      setLive(payload);
+      setLiveQueueEpoch((e) => e + 1);
+    });
     return () => {
       s.disconnect();
       sockRef.current = null;
@@ -145,7 +149,7 @@ export default function StudentPage() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [ticketId, schoolApi, form.specialtyCode, form.languageSection, form.course]);
+  }, [ticketId, schoolApi, form.specialtyCode, form.languageSection, form.course, liveQueueEpoch]);
 
   useEffect(() => {
     if (!myTicket || myTicket.status !== "MISSED") {
@@ -640,7 +644,9 @@ export default function StudentPage() {
               {t("registrationLineNoMatch")}
             </div>
           )}
-          <p className="mt-3 text-xs font-semibold text-violet-600 dark:text-violet-400">{t("registrationPickProfileHint")}</p>
+          <p className="mt-3 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold leading-relaxed text-white shadow-md dark:bg-slate-950">
+            {t("registrationPickProfileHint")}
+          </p>
           <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
             <input
               className="ui-input"

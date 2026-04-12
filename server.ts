@@ -1009,6 +1009,44 @@ app.post("/api/tickets/:id/call-booked", requireAdvisor, (req, res) => {
   res.json({ ok: true, ticketId: id });
 });
 
+/**
+ * Вызвать конкретного студента из очереди к себе, без проверки «маршрутизации зоны».
+ * Нужен при режиме «вся очередь»: эдвайзер расширил настройки или принимает вне своей линии.
+ */
+app.post("/api/tickets/:id/call-to-my-desk", requireAdvisor, (req, res) => {
+  const advisorId = (req.session as any).advisorId as number;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
+
+  const openRow = db.prepare("SELECT reception_open FROM advisors WHERE id = ?").get(advisorId) as { reception_open: number } | undefined;
+  if (!openRow || Number(openRow.reception_open) === 0) {
+    return res.status(403).json({ error: "Откройте запись студентов, чтобы вызывать из очереди" });
+  }
+
+  const row = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
+  if (!row) return res.status(404).json({ error: "Талон не найден" });
+  if (row.status !== "WAITING") return res.status(409).json({ error: "Вызов доступен только для талона в ожидании" });
+
+  const now = new Date();
+  if (!bookingCallableNow(row.preferred_slot_at, now)) {
+    return res.status(409).json({ error: "Для этого талона ещё не наступило время брони" });
+  }
+
+  const advisorRow = db
+    .prepare("SELECT id, name, desk_number, faculty, department FROM advisors WHERE id = ?")
+    .get(advisorId) as any;
+
+  db.prepare(
+    `UPDATE tickets
+     SET status = 'CALLED', called_at = CURRENT_TIMESTAMP,
+         advisor_id = ?, advisor_name = ?, advisor_desk = ?, advisor_faculty = ?, advisor_department = ?
+     WHERE id = ?`
+  ).run(advisorId, advisorRow.name, advisorRow.desk_number, advisorRow.faculty, advisorRow.department, id);
+
+  broadcastQueue();
+  res.json({ ok: true, ticketId: id });
+});
+
 app.patch("/api/tickets/:id", requireAdvisor, (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
@@ -1335,6 +1373,73 @@ app.get("/api/admin/visits/history", requireAdmin, (req, res) => {
     const csv = "\uFEFF" + [header, ...lines].join("\r\n");
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="visits-history.csv"');
+    return res.send(csv);
+  }
+
+  res.json({
+    from,
+    to,
+    rows: rows.map((r) => ({
+      ...r,
+      formatted_number: formatQueueNumber(Number(r.queue_number)),
+    })),
+  });
+});
+
+/** Отзывы студентов за период (дата отправки отзыва). format=csv — Excel. */
+app.get("/api/admin/stats/reviews", requireAdmin, (req, res) => {
+  const from = parseYmdParam(String(req.query.from || ""));
+  const to = parseYmdParam(String(req.query.to || ""));
+  if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
+  if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
+  const format = String(req.query.format || "json").toLowerCase();
+
+  const rows = db
+    .prepare(
+      `SELECT
+         r.ticket_id,
+         r.stars,
+         r.comment AS review_comment,
+         r.created_at AS review_at,
+         t.queue_number,
+         t.student_first_name,
+         t.student_last_name,
+         t.advisor_name,
+         t.advisor_desk,
+         t.school,
+         t.specialty,
+         t.finished_at AS visit_finished_at
+       FROM ticket_reviews r
+       JOIN tickets t ON t.id = r.ticket_id
+       WHERE date(r.created_at, 'localtime') >= ? AND date(r.created_at, 'localtime') <= ?
+       ORDER BY r.created_at DESC, r.ticket_id DESC`
+    )
+    .all(from, to) as any[];
+
+  if (format === "csv") {
+    const header =
+      "ticket_id;queue_number;review_date;stars;student_last;student_first;advisor;desk;school;specialty;visit_finished_at;review_text";
+    const lines = rows.map((r) =>
+      [
+        r.ticket_id,
+        formatQueueNumber(Number(r.queue_number)),
+        String(r.review_at || "").slice(0, 19).replace("T", " "),
+        r.stars,
+        r.student_last_name,
+        r.student_first_name,
+        r.advisor_name,
+        r.advisor_desk,
+        r.school,
+        r.specialty,
+        r.visit_finished_at,
+        r.review_comment,
+      ]
+        .map(csvCell)
+        .join(";")
+    );
+    const csv = "\uFEFF" + [header, ...lines].join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="student-reviews.csv"');
     return res.send(csv);
   }
 

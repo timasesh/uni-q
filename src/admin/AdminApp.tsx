@@ -613,6 +613,21 @@ type AdminVisitExportRow = {
   is_repeat: number;
 };
 
+type AdminReviewExportRow = {
+  ticket_id: number;
+  formatted_number: string;
+  stars: number;
+  review_comment: string | null;
+  review_at: string | null;
+  student_first_name: string | null;
+  student_last_name: string | null;
+  advisor_name: string | null;
+  advisor_desk: string | null;
+  school: string | null;
+  specialty: string | null;
+  visit_finished_at: string | null;
+};
+
 type FaqDailyPoint = { day: string; count: number };
 
 function AdminFaqNoQueueStats() {
@@ -875,6 +890,175 @@ function AdminVisitsExport() {
   );
 }
 
+function starsLabel(n: number): string {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  const s = Math.min(5, Math.max(1, Math.round(x)));
+  return "★".repeat(s) + "☆".repeat(5 - s);
+}
+
+function AdminReviewsExport() {
+  const { t } = useI18n();
+  const [from, setFrom] = useState(() => firstDayOfMonthYmd());
+  const [to, setTo] = useState(() => localYmdToday());
+  const [rows, setRows] = useState<AdminReviewExportRow[] | null>(null);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setErr("");
+    const qs = new URLSearchParams({ from, to });
+    const res = await fetchJSON(`/api/admin/stats/reviews?${qs}`);
+    if (!res.ok) {
+      const j = (await readJSON<{ error?: string }>(res).catch(() => ({}))) as { error?: string };
+      setErr(j.error || "Ошибка");
+      setRows(null);
+      setLoading(false);
+      return;
+    }
+    const js = await readJSON<{ rows: AdminReviewExportRow[] }>(res);
+    setRows(js.rows || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const downloadCsv = async () => {
+    const qs = new URLSearchParams({ from, to, format: "csv" });
+    const res = await fetchJSON(`/api/admin/stats/reviews?${qs}`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "student-reviews.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      <NavLink
+        to="/admin/stats"
+        className="inline-flex items-center gap-2 text-sm font-extrabold text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-white"
+      >
+        ← {t("back")}
+      </NavLink>
+      <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
+        <h2 className="mb-2 text-base font-black text-violet-950 dark:text-white">{t("adminReviewsTitle")}</h2>
+        <p className="mb-5 text-sm font-medium text-violet-700 dark:text-violet-300">{t("adminReviewsHint")}</p>
+
+        <div className="mb-5 flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminVisitsFrom")}
+            </span>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminVisitsTo")}
+            </span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:bg-violet-500 disabled:opacity-60 dark:bg-violet-500 dark:hover:bg-violet-400"
+          >
+            {t("adminVisitsShow")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadCsv()}
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-950 shadow-sm transition hover:bg-violet-100 dark:border-white/10 dark:bg-violet-950/40 dark:text-violet-100"
+          >
+            <Download className="h-4 w-4" aria-hidden />
+            {t("adminVisitsDownloadCsv")}
+          </button>
+        </div>
+
+        {err && <div className="mb-4 text-sm font-semibold text-rose-600">{err}</div>}
+
+        {loading ? (
+          <div className="py-12 text-center text-sm font-semibold text-violet-600 dark:text-violet-300">{t("loading")}</div>
+        ) : !rows || rows.length === 0 ? (
+          <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-400">{t("adminReviewsEmpty")}</div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-violet-100 dark:border-white/10">
+            <table className="min-w-[960px] w-full text-left text-xs">
+              <thead className="bg-violet-50 text-violet-900 dark:bg-slate-900 dark:text-violet-200">
+                <tr>
+                  {[
+                    t("adminReviewsColSubmitted"),
+                    t("adminReviewsColStudent"),
+                    t("adminReviewsColAdvisor"),
+                    t("adminReviewsColStars"),
+                    t("adminReviewsColSchool"),
+                    t("adminReviewsColVisitDone"),
+                    t("adminReviewsColReview"),
+                  ].map((h) => (
+                    <th key={h} className="px-3 py-3 font-black uppercase tracking-widest text-[10px]">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-violet-100 dark:divide-white/10">
+                {rows.map((r) => (
+                  <tr key={`${r.ticket_id}-${r.review_at}`} className="bg-white dark:bg-slate-950/50">
+                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.review_at ? String(r.review_at).replace("T", " ").slice(0, 19) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
+                      {String(r.student_last_name || "").trim()} {String(r.student_first_name || "").trim()}
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      <div>{r.advisor_name || "—"}</div>
+                      {r.advisor_desk ? (
+                        <div className="text-[11px] font-medium text-violet-500 dark:text-violet-400">{r.advisor_desk}</div>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-mono text-sm text-amber-700 dark:text-amber-300">
+                      <span title={String(r.stars)}>{starsLabel(r.stars)}</span>
+                      <span className="ml-2 text-[11px] font-bold text-violet-600 dark:text-violet-400">({r.stars}/5)</span>
+                    </td>
+                    <td className="max-w-[200px] px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      <div className="font-semibold">{r.school || "—"}</div>
+                      <div className="text-[11px]">{r.specialty || ""}</div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.visit_finished_at ? String(r.visit_finished_at).replace("T", " ").slice(0, 19) : "—"}
+                    </td>
+                    <td className="max-w-[280px] px-3 py-2.5 break-words text-violet-800 dark:text-violet-200">
+                      {r.review_comment?.trim() ? r.review_comment : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminStats() {
   const { t } = useI18n();
   const [data, setData] = useState<AdminSummary | null>(null);
@@ -930,6 +1114,7 @@ function AdminStats() {
       desc: t("adminStatReviewsDesc"),
       metric: data ? `${data.reviewsTotal} ${t("adminStatReviewsCount")}` : "…",
       accent: "from-emerald-500 to-teal-600",
+      linkTo: "/admin/stats/reviews",
     },
     {
       icon: Activity,
@@ -1204,6 +1389,7 @@ export default function AdminApp() {
         <Route path="stats" element={<AdminStats />} />
         <Route path="stats/visits" element={<AdminVisitsExport />} />
         <Route path="stats/faq" element={<AdminFaqNoQueueStats />} />
+        <Route path="stats/reviews" element={<AdminReviewsExport />} />
         <Route path="load" element={<AdminLoad />} />
         <Route path="windows" element={<AdminWindows />} />
         <Route path="settings" element={<AdminSettingsPage />} />

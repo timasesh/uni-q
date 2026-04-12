@@ -7,14 +7,7 @@ import { cn } from "../lib/cn";
 import { useI18n } from "../i18n";
 import { useAdvisorContext } from "../context/AdvisorContext";
 import { hydrateAdvisorWorkedFromServer } from "../lib/advisorWorkSync";
-
-const SCHOOL_NAMES = [
-  "Школа Цифровых Технологий",
-  "Школа Менеджмента",
-  "Школа Экономики и Финансов",
-  "Школа Гуманитарных и Социальных Наук",
-  "Школа Права",
-];
+import { SCHOOL_DATA, SCHOOL_NAMES } from "../schools";
 
 const LANGS = [
   { id: "ru", label: "Рус" },
@@ -44,6 +37,7 @@ export default function AdvisorSettingsPage() {
   const [schools, setSchools] = useState<string[]>([]);
   const [langs, setLangs] = useState<string[]>([]);
   const [courses, setCourses] = useState<number[]>([1, 2, 3, 4]);
+  const [specialtyCodes, setSpecialtyCodes] = useState<string[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -63,6 +57,7 @@ export default function AdvisorSettingsPage() {
         .map((x) => Number(x))
         .filter((n) => n >= 1 && n <= 4);
       setCourses(cs.length > 0 ? cs : [1, 2, 3, 4]);
+      setSpecialtyCodes(safeParseArray<string>(js.assigned_specialties_json).map((x) => String(x)));
       setLoading(false);
     })();
   }, []);
@@ -75,6 +70,27 @@ export default function AdvisorSettingsPage() {
   const schoolSet = useMemo(() => new Set(schools), [schools]);
   const langSet = useMemo(() => new Set(langs), [langs]);
   const courseSet = useMemo(() => new Set(courses), [courses]);
+  const specSet = useMemo(() => new Set(specialtyCodes), [specialtyCodes]);
+
+  const specialtiesForSelectedSchools = useMemo(() => {
+    const out: { code: string; label: string }[] = [];
+    const seen = new Set<string>();
+    for (const schoolName of schools) {
+      const entry = SCHOOL_DATA[schoolName];
+      if (!entry) continue;
+      for (const sp of entry.specialties) {
+        if (seen.has(sp.code)) continue;
+        seen.add(sp.code);
+        out.push({ code: sp.code, label: `${sp.name} (${sp.code})` });
+      }
+    }
+    return out;
+  }, [schools]);
+
+  useEffect(() => {
+    const valid = new Set(specialtiesForSelectedSchools.map((s) => s.code));
+    setSpecialtyCodes((prev) => prev.filter((c) => valid.has(c)));
+  }, [specialtiesForSelectedSchools]);
 
   const toggleSchool = (s: string) => {
     setSchools((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
@@ -87,6 +103,10 @@ export default function AdvisorSettingsPage() {
       const next = prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b);
       return next.length === 0 ? [1, 2, 3, 4] : next;
     });
+  };
+
+  const toggleSpecialty = (code: string) => {
+    setSpecialtyCodes((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code].sort()));
   };
 
   const save = async () => {
@@ -103,7 +123,7 @@ export default function AdvisorSettingsPage() {
         assigned_schools_json: schools,
         assigned_languages_json: langs,
         assigned_courses_json: courses,
-        assigned_specialties_json: [],
+        assigned_specialties_json: specialtyCodes,
       }),
     });
     const js = await readJSON<any>(res);
@@ -112,7 +132,9 @@ export default function AdvisorSettingsPage() {
       setMsg(js?.error || "Не сохранено");
       return;
     }
-    setMe(js as Advisor);
+    const next = js as Advisor;
+    setMe(next);
+    setSpecialtyCodes(safeParseArray<string>(next.assigned_specialties_json).map((x) => String(x)));
     setMsg("Сохранено");
   };
 
@@ -237,6 +259,41 @@ export default function AdvisorSettingsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="ui-card p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">
+                  {t("receptionSpecialtiesSection")}
+                </div>
+                <div className="mt-1 text-sm font-semibold text-violet-800 dark:text-sky-300">{t("receptionSpecialtiesHint")}</div>
+              </div>
+              <button type="button" onClick={() => setSpecialtyCodes([])} className="ui-btn-ghost px-3 py-2 text-xs">
+                {t("receptionSpecialtiesAny")}
+              </button>
+            </div>
+            {specialtiesForSelectedSchools.length === 0 ? (
+              <div className="mt-3 text-sm font-semibold text-violet-600 dark:text-violet-400">{t("receptionSpecialtiesPickSchools")}</div>
+            ) : (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {specialtiesForSelectedSchools.map((sp) => (
+                  <button
+                    key={sp.code}
+                    type="button"
+                    onClick={() => toggleSpecialty(sp.code)}
+                    className={cn(
+                      "rounded-2xl border-2 px-3 py-2.5 text-left text-xs font-extrabold shadow-sm transition",
+                      specSet.has(sp.code)
+                        ? "border-emerald-400 bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-300/90 dark:border-emerald-300 dark:bg-emerald-500 dark:text-white dark:shadow-emerald-500/50 dark:ring-emerald-400"
+                        : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
+                    )}
+                  >
+                    {sp.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
