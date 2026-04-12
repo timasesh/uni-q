@@ -250,7 +250,7 @@ function ensureSeed() {
       department: "Окно 1",
       desk: "1",
       login: "smirnov",
-      hash: bcrypt.hashSync("Advisor2026!", 10),
+      hash: bcrypt.hashSync("Manager2026!", 10),
       schools: JSON.stringify(["Школа Цифровых Технологий"]),
       lang: "any",
       courses: JSON.stringify([1, 2, 3, 4]),
@@ -264,7 +264,7 @@ function ensureSeed() {
       department: "Окно 2",
       desk: "2",
       login: "ivanov",
-      hash: bcrypt.hashSync("Advisor2026!", 10),
+      hash: bcrypt.hashSync("Manager2026!", 10),
       schools: JSON.stringify([]),
       lang: "any",
       courses: JSON.stringify([1, 2, 3, 4]),
@@ -306,9 +306,15 @@ function deskWindowFromDb(raw: string | null | undefined): number | null {
   return n;
 }
 
-function requireAdvisor(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const advisorId = (req.session as any).advisorId as number | undefined;
-  if (!advisorId) return res.status(401).json({ error: "Не авторизован" });
+function requireManager(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const s = req.session as any;
+  let managerId = s.managerId as number | undefined;
+  if (managerId == null && s.advisorId != null) {
+    managerId = Number(s.advisorId);
+    s.managerId = managerId;
+    delete s.advisorId;
+  }
+  if (!managerId) return res.status(401).json({ error: "Не авторизован" });
   next();
 }
 
@@ -400,7 +406,7 @@ function parseCourse(course: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Список эдвайзеров для расчёта маршрутизации талонов (кэш на один снимок очереди). */
+/** Список менеджеров для расчёта маршрутизации талонов (кэш на один снимок очереди). */
 function advisorsRowsForRouting(): any[] {
   return db
     .prepare(
@@ -411,7 +417,7 @@ function advisorsRowsForRouting(): any[] {
 }
 
 /**
- * Один «владелец» WAITING-талона среди эдвайзеров с открытой записью и подходящей зоной,
+ * Один «владелец» WAITING-талона среди менеджеров с открытой записью и подходящей зоной,
  * чтобы талон не отображался у нескольких сотрудников сразу (при пересечении зон или пустом списке школ).
  * Правило: минимальный id среди подходящих.
  */
@@ -479,7 +485,7 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   return true;
 }
 
-/** Есть ли открытая запись хотя бы у одного эдвайзера, подходящего по профилю. */
+/** Есть ли открытая запись хотя бы у одного менеджера, подходящего по профилю. */
 function registrationOpenForStudent(body: {
   school?: string;
   language_section?: string;
@@ -576,12 +582,12 @@ function broadcastQueue() {
 
 // --- API
 app.get("/api/session", (_req, res) => res.json(getQueueSession()));
-app.post("/api/session/start", requireAdvisor, (_req, res) => {
+app.post("/api/session/start", requireManager, (_req, res) => {
   db.prepare("UPDATE queue_session SET is_active = 1 WHERE id = 1").run();
   broadcastQueue();
   res.json(getQueueSession());
 });
-app.post("/api/session/stop", requireAdvisor, (_req, res) => {
+app.post("/api/session/stop", requireManager, (_req, res) => {
   db.prepare("UPDATE queue_session SET is_active = 0 WHERE id = 1").run();
   broadcastQueue();
   res.json(getQueueSession());
@@ -610,7 +616,7 @@ app.post("/api/auth/login", (req, res) => {
     return res.status(401).json({ error: "Неверный логин или пароль" });
   }
   delete (req.session as any).adminId;
-  (req.session as any).advisorId = row.id;
+  (req.session as any).managerId = row.id;
   res.json({ ok: true });
 });
 
@@ -630,7 +636,7 @@ app.post("/api/admin/login", (req, res) => {
   if (!bcrypt.compareSync(String(password), row.password_hash)) {
     return res.status(401).json({ error: "Неверный логин или пароль" });
   }
-  delete (req.session as any).advisorId;
+  delete (req.session as any).managerId;
   (req.session as any).adminId = row.id;
   res.json({ ok: true, id: row.id, login: row.login, name: row.name || "Admin" });
 });
@@ -649,7 +655,7 @@ app.get("/api/admin/me", requireAdmin, (req, res) => {
   res.json({ id: row.id, login: row.login, name: row.name || "Admin" });
 });
 
-app.get("/api/admin/advisors", requireAdmin, (_req, res) => {
+app.get("/api/admin/managers", requireAdmin, (_req, res) => {
   const today = (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
   const rows = db
     .prepare(
@@ -664,8 +670,39 @@ app.get("/api/admin/advisors", requireAdmin, (_req, res) => {
   res.json({ rows });
 });
 
+/** Создать менеджера: имя, фамилия, логин, пароль; зона приёма по умолчанию — любые школы / курсы 1–4. */
+app.post("/api/admin/managers", requireAdmin, (req, res) => {
+  const body = (req.body || {}) as {
+    firstName?: string;
+    lastName?: string;
+    login?: string;
+    password?: string;
+  };
+  const firstName = String(body.firstName || "").trim();
+  const lastName = String(body.lastName || "").trim();
+  const login = String(body.login || "").trim();
+  const password = String(body.password || "");
+  if (!firstName || !lastName) return res.status(400).json({ error: "Укажите имя и фамилию" });
+  if (!login) return res.status(400).json({ error: "Укажите логин" });
+  if (password.length < 4) return res.status(400).json({ error: "Пароль не короче 4 символов" });
+  const dup = db.prepare("SELECT 1 AS ok FROM advisors WHERE login = ?").get(login) as { ok: 1 } | undefined;
+  if (dup) return res.status(409).json({ error: "Логин уже занят" });
+  const name = `${firstName} ${lastName}`.trim();
+  const hash = bcrypt.hashSync(password, 10);
+  const info = db
+    .prepare(
+      `INSERT INTO advisors (
+         name, faculty, department, desk_number, login, password_hash,
+         assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json,
+         reception_open
+       ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, 1)`
+    )
+    .run(name, login, hash);
+  res.json({ ok: true, id: Number(info.lastInsertRowid) });
+});
+
 /** Назначить сотруднику окно 1…5 (в `desk_number` сохраняется «1»…«5»). У других сотрудников это окно сбрасывается. */
-app.patch("/api/admin/advisors/:id/desk", requireAdmin, (req, res) => {
+app.patch("/api/admin/managers/:id/desk", requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный id" });
   const raw = (req.body || {}).window;
@@ -698,8 +735,8 @@ app.patch("/api/admin/advisors/:id/desk", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/advisors/me", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.get("/api/managers/me", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const row = db
     .prepare(
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number,
@@ -716,8 +753,8 @@ app.get("/api/advisors/me", requireAdvisor, (req, res) => {
 });
 
 /** Открыть/закрыть запись только для своей зоны приёма (не вся очередь). */
-app.patch("/api/advisors/me/reception", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.patch("/api/managers/me/reception", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const open = Boolean((req.body || {}).open);
   db.prepare("UPDATE advisors SET reception_open = ? WHERE id = ?").run(open ? 1 : 0, advisorId);
   broadcastQueue();
@@ -736,8 +773,8 @@ app.patch("/api/advisors/me/reception", requireAdvisor, (req, res) => {
   res.json(row);
 });
 
-app.patch("/api/advisors/me/work-total", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.patch("/api/managers/me/work-total", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const totalMs = Number((req.body || {}).totalMs);
   if (!Number.isFinite(totalMs) || totalMs < 0) return res.status(400).json({ error: "Некорректное totalMs" });
   db.prepare(
@@ -761,8 +798,8 @@ app.patch("/api/advisors/me/work-total", requireAdvisor, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/advisors/me/history", requireAdvisor, async (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.get("/api/managers/me/history", requireManager, async (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const limitRaw = Number((req.query.limit as string) || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;
   const dateQ = parseYmdParam(String(req.query.date || ""));
@@ -825,9 +862,9 @@ app.get("/api/advisors/me/history", requireAdvisor, async (req, res) => {
         r.total_minutes = minutesBetweenTimestamps(r.created_at, r.finished_at);
       }
     } catch (e) {
-      console.error("[advisor history pg]", e);
+      console.error("[manager history pg]", e);
       console.warn(
-        "[advisor history] ответ из SQLite: PostgreSQL недоступен. На Render задайте pooler Supabase (IPv4) или см. DEPLOY-RENDER.md."
+        "[manager history] ответ из SQLite: PostgreSQL недоступен. На Render задайте pooler Supabase (IPv4) или см. DEPLOY-RENDER.md."
       );
       rows = advisorHistorySqlite();
     }
@@ -846,8 +883,8 @@ app.get("/api/advisors/me/history", requireAdvisor, async (req, res) => {
   });
 });
 
-app.patch("/api/advisors/me/scope", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.patch("/api/managers/me/scope", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const body = req.body || {};
   const schools = Array.isArray(body.assigned_schools_json) ? body.assigned_schools_json.map(String) : [];
   const langs = Array.isArray(body.assigned_languages_json) ? body.assigned_languages_json.map((x: any) => String(x).toLowerCase()) : [];
@@ -905,7 +942,7 @@ app.post("/api/tickets", (req, res) => {
     return res.status(409).json({ error: "Нет линии приёма для указанных данных" });
   }
   if (!reg.open) {
-    return res.status(409).json({ error: "Запись по вашему направлению сейчас закрыта эдвайзером" });
+    return res.status(409).json({ error: "Запись по вашему направлению сейчас закрыта менеджером" });
   }
 
   let slot: string | null = null;
@@ -985,8 +1022,8 @@ app.post("/api/tickets/:id/cancel", (req, res) => {
   res.json({ ok: true, id });
 });
 
-app.post("/api/tickets/call-next", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.post("/api/tickets/call-next", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
 
   const advisorRow = db
     .prepare("SELECT id, name, desk_number, faculty, department FROM advisors WHERE id = ?")
@@ -1022,8 +1059,8 @@ app.post("/api/tickets/call-next", requireAdvisor, (req, res) => {
   res.json({ ok: true, ticketId: next.id });
 });
 
-app.post("/api/tickets/:id/call-booked", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.post("/api/tickets/:id/call-booked", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
 
@@ -1043,7 +1080,7 @@ app.post("/api/tickets/:id/call-booked", requireAdvisor, (req, res) => {
 
   const routeId = pickRouteAdvisorIdForTicket(row, advisorsRowsForRouting());
   if (routeId !== advisorId) {
-    return res.status(403).json({ error: "Этот талон в очереди другого эдвайзера по распределению зоны" });
+    return res.status(403).json({ error: "Этот талон в очереди другого менеджера по распределению зоны" });
   }
 
   const advisorRow = db
@@ -1063,10 +1100,10 @@ app.post("/api/tickets/:id/call-booked", requireAdvisor, (req, res) => {
 
 /**
  * Вызвать конкретного студента из очереди к себе, без проверки «маршрутизации зоны».
- * Нужен при режиме «вся очередь»: эдвайзер расширил настройки или принимает вне своей линии.
+ * Нужен при режиме «вся очередь»: менеджер расширил настройки или принимает вне своей линии.
  */
-app.post("/api/tickets/:id/call-to-my-desk", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.post("/api/tickets/:id/call-to-my-desk", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
 
@@ -1099,7 +1136,7 @@ app.post("/api/tickets/:id/call-to-my-desk", requireAdvisor, (req, res) => {
   res.json({ ok: true, ticketId: id });
 });
 
-app.patch("/api/tickets/:id", requireAdvisor, (req, res) => {
+app.patch("/api/tickets/:id", requireManager, (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
   const { status, comment, case_type } = (req.body || {}) as { status?: TicketStatus; comment?: string; case_type?: string | null };
@@ -1188,8 +1225,8 @@ app.post("/api/tickets/:id/missed-feedback", (req, res) => {
 });
 
 /** Вернуть в очередь / снова на приём / правка комментария — не позже часа после завершения. */
-app.post("/api/tickets/:id/reopen", requireAdvisor, (req, res) => {
-  const advisorId = (req.session as any).advisorId as number;
+app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
   const action = String((req.body || {}).action || "").trim();
@@ -1279,18 +1316,25 @@ app.get("/api/admin/stats/summary", requireAdmin, (_req, res) => {
   res.json({ events, reviewsTotal: r.c, ticketsToday: today.c, bookedSlotsLive: bookedLive.c });
 });
 
-/** Открытия FAQ без талона по дням (событие faq_no_queue). format=csv — таблица для Excel. */
+/** Открытия FAQ без талона по дням (событие faq_no_queue). from/to — фильтр по дате события; format=csv — Excel. */
 app.get("/api/admin/stats/faq-no-queue", requireAdmin, (req, res) => {
   const format = String(req.query.format || "json").toLowerCase();
-  const rows = db
-    .prepare(
-      `SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
+  const from = parseYmdParam(String(req.query.from || ""));
+  const to = parseYmdParam(String(req.query.to || ""));
+  if ((from && !to) || (!from && to)) {
+    return res.status(400).json({ error: "Укажите обе даты from и to или ни одной" });
+  }
+  if (from && to && from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
+  let sql = `SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
        FROM stats_events
-       WHERE event_type = 'faq_no_queue'
-       GROUP BY date(created_at, 'localtime')
-       ORDER BY day ASC`
-    )
-    .all() as { day: string; count: number }[];
+       WHERE event_type = 'faq_no_queue'`;
+  const params: string[] = [];
+  if (from && to) {
+    sql += ` AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`;
+    params.push(from, to);
+  }
+  sql += ` GROUP BY date(created_at, 'localtime') ORDER BY day ASC`;
+  const rows = db.prepare(sql).all(...params) as { day: string; count: number }[];
 
   if (format === "csv") {
     const header = "date;count";
@@ -1301,7 +1345,170 @@ app.get("/api/admin/stats/faq-no-queue", requireAdmin, (req, res) => {
     return res.send(csv);
   }
 
-  res.json({ series: rows });
+  res.json({ from: from || null, to: to || null, series: rows });
+});
+
+/** Время ожидания (мин) от регистрации до вызова или начала приёма; фильтр по дате регистрации. */
+app.get("/api/admin/stats/wait-times", requireAdmin, (req, res) => {
+  const from = parseYmdParam(String(req.query.from || ""));
+  const to = parseYmdParam(String(req.query.to || ""));
+  if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
+  if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
+  const statusFilter = String(req.query.status || "").trim().toUpperCase();
+  const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
+  const format = String(req.query.format || "json").toLowerCase();
+
+  const raw = db
+    .prepare(
+      `SELECT
+         t.id AS ticket_id,
+         t.queue_number,
+         t.student_first_name,
+         t.student_last_name,
+         t.school,
+         t.status,
+         t.created_at,
+         t.called_at,
+         t.started_at,
+         CASE
+           WHEN t.called_at IS NOT NULL
+             THEN (strftime('%s', t.called_at) - strftime('%s', t.created_at)) / 60.0
+           WHEN t.started_at IS NOT NULL
+             THEN (strftime('%s', t.started_at) - strftime('%s', t.created_at)) / 60.0
+           ELSE NULL
+         END AS wait_minutes
+       FROM tickets t
+       WHERE date(t.created_at, 'localtime') >= ? AND date(t.created_at, 'localtime') <= ?
+         AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)`
+    )
+    .all(from, to) as {
+    ticket_id: number;
+    queue_number: number;
+    student_first_name: string | null;
+    student_last_name: string | null;
+    school: string | null;
+    status: string;
+    created_at: string;
+    called_at: string | null;
+    started_at: string | null;
+    wait_minutes: number | null;
+  }[];
+
+  let rows = raw.filter((r) => r.wait_minutes != null && Number.isFinite(Number(r.wait_minutes)) && Number(r.wait_minutes) >= 0);
+  if (statusFilter && validStatuses.has(statusFilter)) {
+    rows = rows.filter((r) => r.status === statusFilter);
+  }
+  const minWait = Number(req.query.minWait ?? "");
+  const maxWait = Number(req.query.maxWait ?? "");
+  if (Number.isFinite(minWait)) rows = rows.filter((r) => Number(r.wait_minutes) >= minWait);
+  if (Number.isFinite(maxWait)) rows = rows.filter((r) => Number(r.wait_minutes) <= maxWait);
+
+  const waits = rows.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);
+  const count = waits.length;
+  const sum = waits.reduce((a, b) => a + b, 0);
+  const avgMin = count ? sum / count : 0;
+  const medianMin =
+    count === 0 ? 0 : count % 2 === 1 ? waits[(count - 1) / 2]! : (waits[count / 2 - 1]! + waits[count / 2]!) / 2;
+
+  if (format === "csv") {
+    const header =
+      "ticket_id;queue;wait_minutes;status;created_at;called_at;started_at;student_last;student_first;school";
+    const lines = rows.map((r) =>
+      [
+        r.ticket_id,
+        formatQueueNumber(Number(r.queue_number)),
+        Number(r.wait_minutes).toFixed(2),
+        r.status,
+        r.created_at,
+        r.called_at,
+        r.started_at,
+        r.student_last_name,
+        r.student_first_name,
+        r.school,
+      ]
+        .map(csvCell)
+        .join(";")
+    );
+    const csv = "\uFEFF" + [header, ...lines].join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="wait-times.csv"');
+    return res.send(csv);
+  }
+
+  res.json({
+    from,
+    to,
+    summary: { count, avgMin, medianMin },
+    rows: rows.map((r) => ({
+      ...r,
+      formatted_number: formatQueueNumber(Number(r.queue_number)),
+      wait_minutes: Number(Number(r.wait_minutes).toFixed(2)),
+    })),
+  });
+});
+
+/** Талоны с бронью (preferred_slot_at): кто на какое время, фильтр по дате слота. */
+app.get("/api/admin/stats/bookings", requireAdmin, (req, res) => {
+  const from = parseYmdParam(String(req.query.from || ""));
+  const to = parseYmdParam(String(req.query.to || ""));
+  if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
+  if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
+  const statusFilter = String(req.query.status || "").trim().toUpperCase();
+  const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
+  const format = String(req.query.format || "json").toLowerCase();
+
+  let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
+       preferred_slot_at, status, created_at, advisor_name, advisor_desk
+     FROM tickets
+     WHERE preferred_slot_at IS NOT NULL
+       AND date(preferred_slot_at, 'localtime') >= ? AND date(preferred_slot_at, 'localtime') <= ?`;
+  const params: (string | number)[] = [from, to];
+  if (statusFilter && validStatuses.has(statusFilter)) {
+    sql += " AND status = ?";
+    params.push(statusFilter);
+  }
+  sql += " ORDER BY preferred_slot_at ASC, id ASC";
+  let rows = db.prepare(sql).all(...params) as any[];
+
+  const schoolQ = String(req.query.school || "").trim().toLowerCase();
+  if (schoolQ) {
+    rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
+  }
+
+  if (format === "csv") {
+    const header =
+      "ticket_id;queue;slot_local;status;registered_at;student_last;student_first;school;specialty;manager;desk";
+    const lines = rows.map((r) =>
+      [
+        r.ticket_id,
+        formatQueueNumber(Number(r.queue_number)),
+        r.preferred_slot_at,
+        r.status,
+        r.created_at,
+        r.student_last_name,
+        r.student_first_name,
+        r.school,
+        r.specialty,
+        r.advisor_name,
+        r.advisor_desk,
+      ]
+        .map(csvCell)
+        .join(";")
+    );
+    const csv = "\uFEFF" + [header, ...lines].join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="bookings-by-slot.csv"');
+    return res.send(csv);
+  }
+
+  res.json({
+    from,
+    to,
+    rows: rows.map((r) => ({
+      ...r,
+      formatted_number: formatQueueNumber(Number(r.queue_number)),
+    })),
+  });
 });
 
 /** Нагрузка по часам (локальное время): регистрации талонов и вызовы к окну, 9:00–18:00. */
@@ -1359,7 +1566,7 @@ function csvCell(v: unknown): string {
   return s;
 }
 
-/** История завершённых визитов за период (все эдвайзеры). format=csv — выгрузка для Excel. */
+/** История завершённых визитов за период (все менеджеры). format=csv — выгрузка для Excel. */
 app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
   const from = parseYmdParam(String(req.query.from || ""));
   const to = parseYmdParam(String(req.query.to || ""));
@@ -1411,9 +1618,19 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
     rows = adminVisitsSqlite();
   }
 
+  const statusFilter = String(req.query.status || "").trim().toUpperCase();
+  const validStatuses = new Set(["DONE", "MISSED", "CANCELLED"]);
+  if (statusFilter && validStatuses.has(statusFilter)) {
+    rows = rows.filter((r) => String(r.status).toUpperCase() === statusFilter);
+  }
+  const schoolQ = String(req.query.school || "").trim().toLowerCase();
+  if (schoolQ) {
+    rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
+  }
+
   if (format === "csv") {
     const header =
-      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;advisor;desk;case_type;comment;called_at;started_at;finished_at";
+      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;manager;desk;case_type;comment;called_at;started_at;finished_at";
     const lines = rows.map((r) =>
       [
         r.ticket_id,
@@ -1462,9 +1679,11 @@ app.get("/api/admin/stats/reviews", requireAdmin, (req, res) => {
   if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
   const format = String(req.query.format || "json").toLowerCase();
 
-  const rows = db
-    .prepare(
-      `SELECT
+  const starsRaw = String(req.query.stars || "").trim();
+  const starsEq = starsRaw === "" ? null : Number(starsRaw);
+  const schoolQ = String(req.query.school || "").trim().toLowerCase();
+
+  let sql = `SELECT
          r.ticket_id,
          r.stars,
          r.comment AS review_comment,
@@ -1479,14 +1698,21 @@ app.get("/api/admin/stats/reviews", requireAdmin, (req, res) => {
          t.finished_at AS visit_finished_at
        FROM ticket_reviews r
        JOIN tickets t ON t.id = r.ticket_id
-       WHERE date(r.created_at, 'localtime') >= ? AND date(r.created_at, 'localtime') <= ?
-       ORDER BY r.created_at DESC, r.ticket_id DESC`
-    )
-    .all(from, to) as any[];
+       WHERE date(r.created_at, 'localtime') >= ? AND date(r.created_at, 'localtime') <= ?`;
+  const params: (string | number)[] = [from, to];
+  if (starsEq != null && Number.isFinite(starsEq) && starsEq >= 1 && starsEq <= 5) {
+    sql += " AND r.stars = ?";
+    params.push(Math.round(starsEq));
+  }
+  sql += " ORDER BY r.created_at DESC, r.ticket_id DESC";
+  let rows = db.prepare(sql).all(...params) as any[];
+  if (schoolQ) {
+    rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
+  }
 
   if (format === "csv") {
     const header =
-      "ticket_id;queue_number;review_date;stars;student_last;student_first;advisor;desk;school;specialty;visit_finished_at;review_text";
+      "ticket_id;queue_number;review_date;stars;student_last;student_first;manager;desk;school;specialty;visit_finished_at;review_text";
     const lines = rows.map((r) =>
       [
         r.ticket_id,

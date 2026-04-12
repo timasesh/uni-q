@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchJSON, readJSON } from "../api";
 import {
-  advisorWorkStorageKeys,
   bumpTodayWorkedMs,
-  getAdvisorWorkedMsSnapshot,
+  getManagerWorkedMsSnapshot,
   getTodayWorkedMsSnapshot,
+  hydrateManagerWorkedFromServer,
+  managerWorkStorageKeys,
 } from "../lib/advisorWorkSync";
 
 function formatWorkHm(ms: number) {
@@ -14,16 +15,16 @@ function formatWorkHm(ms: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-type Props = { advisorId: number };
+type Props = { managerId: number };
 
-export default function AdvisorWorkTimer({ advisorId }: Props) {
+export default function ManagerWorkTimer({ managerId }: Props) {
   const [sessionActive, setSessionActive] = useState(false);
   const [, setTick] = useState(0);
   const prevActiveRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     prevActiveRef.current = null;
-  }, [advisorId]);
+  }, [managerId]);
 
   useEffect(() => {
     const id = setInterval(() => setTick((x) => x + 1), 1000);
@@ -33,10 +34,16 @@ export default function AdvisorWorkTimer({ advisorId }: Props) {
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
-      const res = await fetchJSON("/api/advisors/me");
+      const res = await fetchJSON("/api/managers/me");
       if (!res.ok || cancelled) return;
-      const js = await readJSON<{ reception_open?: number | boolean }>(res);
+      const js = await readJSON<{ reception_open?: number | boolean; total_work_ms?: number }>(res);
       const open = !(js?.reception_open === false || js?.reception_open === 0);
+      const serverTotal = Number(js?.total_work_ms) || 0;
+      const { worked: wk } = managerWorkStorageKeys(managerId);
+      const localBase = Number(localStorage.getItem(wk)) || 0;
+      if (serverTotal > localBase) {
+        hydrateManagerWorkedFromServer(managerId, serverTotal);
+      }
       setSessionActive(open);
     };
     void poll();
@@ -45,10 +52,10 @@ export default function AdvisorWorkTimer({ advisorId }: Props) {
       cancelled = true;
       clearInterval(pi);
     };
-  }, []);
+  }, [managerId]);
 
   useEffect(() => {
-    const { worked: WORK_KEY, segment: SEG_KEY } = advisorWorkStorageKeys(advisorId);
+    const { worked: WORK_KEY, segment: SEG_KEY } = managerWorkStorageKeys(managerId);
     const p = prevActiveRef.current;
 
     if (p === null) {
@@ -67,7 +74,7 @@ export default function AdvisorWorkTimer({ advisorId }: Props) {
           const extra = Number.isFinite(add) && add > 0 ? add : 0;
           const total = Number(localStorage.getItem(WORK_KEY)) || 0;
           localStorage.setItem(WORK_KEY, String(total + extra));
-          bumpTodayWorkedMs(advisorId, extra);
+          bumpTodayWorkedMs(managerId, extra);
           localStorage.removeItem(SEG_KEY);
         }
       } else if (!p && sessionActive) {
@@ -75,30 +82,30 @@ export default function AdvisorWorkTimer({ advisorId }: Props) {
       }
       prevActiveRef.current = sessionActive;
     }
-  }, [sessionActive, advisorId]);
+  }, [sessionActive, managerId]);
 
-  const { worked: WORK_KEY, segment: SEG_KEY } = advisorWorkStorageKeys(advisorId);
+  const { worked: WORK_KEY, segment: SEG_KEY } = managerWorkStorageKeys(managerId);
   const worked = Number(localStorage.getItem(WORK_KEY)) || 0;
   const seg = localStorage.getItem(SEG_KEY);
   const extra = sessionActive && seg ? Date.now() - Number(seg) : 0;
 
   const totalRef = useRef(0);
-  totalRef.current = getAdvisorWorkedMsSnapshot(advisorId);
+  totalRef.current = getManagerWorkedMsSnapshot(managerId);
 
   useEffect(() => {
     const sync = async () => {
-      await fetchJSON("/api/advisors/me/work-total", {
+      await fetchJSON("/api/managers/me/work-total", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           totalMs: Math.floor(totalRef.current),
-          todayMs: getTodayWorkedMsSnapshot(advisorId),
+          todayMs: getTodayWorkedMsSnapshot(managerId),
         }),
       });
     };
     const id = window.setInterval(() => void sync(), 20_000);
     return () => clearInterval(id);
-  }, [advisorId]);
+  }, [managerId]);
 
   return (
     <span className="rounded-lg bg-white/10 px-2 py-1 font-mono text-sm font-black tabular-nums text-white ring-1 ring-white/20">

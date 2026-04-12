@@ -1,9 +1,9 @@
 import type { Advisor, Ticket } from "../types";
 
 /**
- * Видимость талона для эдвайзера в live-очереди.
+ * Видимость талона для менеджера в live-очереди.
  * WAITING: только у выбранного сервером `route_advisor_id` (один владелец при пересечении зон).
- * CALLED / IN_SERVICE: только у эдвайзера, который вызвал.
+ * CALLED / IN_SERVICE: только у менеджера, который вызвал.
  */
 export function ticketMatchesAdvisor(me: Advisor, ticket: Ticket): boolean {
   if (ticket.status === "CALLED" || ticket.status === "IN_SERVICE") {

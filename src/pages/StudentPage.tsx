@@ -432,7 +432,7 @@ export default function StudentPage() {
                     : !lineReg.matchesAny
                       ? t("registrationLineNoMatch")
                       : !lineReg.open
-                        ? t("registrationLineClosedByAdvisor")
+                        ? t("registrationLineClosedByManager")
                         : t("registrationOpen")}
               </div>
             </div>
@@ -469,7 +469,7 @@ export default function StudentPage() {
                     : !lineReg.matchesAny
                       ? t("registrationLineNoMatch")
                       : !lineReg.open
-                        ? t("registrationLineClosedByAdvisor")
+                        ? t("registrationLineClosedByManager")
                         : t("registrationOpen")}
               </div>
             </div>
@@ -550,9 +550,9 @@ export default function StudentPage() {
 
             {(myTicket.status === "CALLED" || myTicket.status === "IN_SERVICE") && (
               <div className="border-t border-emerald-200/80 bg-emerald-50/90 px-5 py-4 dark:border-emerald-900/50 dark:bg-emerald-950/35">
-                <div className="font-black text-emerald-800 dark:text-emerald-200">{t("studentGoToAdvisor")}</div>
+                <div className="font-black text-emerald-800 dark:text-emerald-200">{t("studentGoToManager")}</div>
                 <div className="mt-1 text-sm font-bold text-emerald-900 dark:text-emerald-100">
-                  {myTicket.advisor_name || t("historyAdvisor")}
+                  {myTicket.advisor_name || t("historyManagerName")}
                   {myTicket.advisor_desk ? ` · ${myTicket.advisor_desk}` : ""}
                 </div>
               </div>
@@ -875,7 +875,9 @@ export default function StudentPage() {
                   onClick={() => setReviewStars(n)}
                   className={cn(
                     "text-3xl transition hover:scale-110",
-                    n <= reviewStars ? "grayscale-0" : "opacity-40 grayscale"
+                    n <= reviewStars
+                      ? "text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.65)]"
+                      : "text-amber-200/35 opacity-50"
                   )}
                   aria-label={`${n}`}
                 >

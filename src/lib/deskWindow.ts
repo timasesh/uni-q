@@ -1,7 +1,7 @@
 /** Сколько окон поддерживает схема (`/scheme/1.png` …). */
 export const SCHEME_WINDOW_COUNT = 5;
 
-/** Из поля окна эдвайзера (например «1», «Окно 2») — номер 1…5 для схемы. */
+/** Из поля окна менеджера (например «1», «Окно 2») — номер 1…5 для схемы. */
 export function parseDeskWindowNumber(desk: string | null | undefined): number | null {
   if (desk == null) return null;
   const m = String(desk).match(/(\d+)/);

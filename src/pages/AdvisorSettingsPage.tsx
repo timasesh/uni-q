@@ -5,8 +5,8 @@ import { fetchJSON, readJSON } from "../api";
 import type { Advisor } from "../types";
 import { cn } from "../lib/cn";
 import { useI18n } from "../i18n";
-import { useAdvisorContext } from "../context/AdvisorContext";
-import { hydrateAdvisorWorkedFromServer } from "../lib/advisorWorkSync";
+import { useManagerContext } from "../context/ManagerContext";
+import { hydrateManagerWorkedFromServer } from "../lib/advisorWorkSync";
 import { SCHOOL_DATA, SCHOOL_NAMES } from "../schools";
 
 const LANGS = [
@@ -28,7 +28,7 @@ function safeParseArray<T = unknown>(raw: string | null | undefined): T[] {
 export default function AdvisorSettingsPage() {
   const { t } = useI18n();
   const nav = useNavigate();
-  const { setAdvisorId } = useAdvisorContext();
+  const { setManagerId } = useManagerContext();
   const [me, setMe] = useState<Advisor | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -42,14 +42,14 @@ export default function AdvisorSettingsPage() {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const res = await fetchJSON("/api/advisors/me");
+      const res = await fetchJSON("/api/managers/me");
       if (!res.ok) {
         setMe(null);
         setLoading(false);
         return;
       }
       const js = await readJSON<Advisor>(res);
-      hydrateAdvisorWorkedFromServer(js.id, Number(js.total_work_ms) || 0);
+      hydrateManagerWorkedFromServer(js.id, Number(js.total_work_ms) || 0);
       setMe(js);
       setSchools(safeParseArray<string>(js.assigned_schools_json));
       setLangs(safeParseArray<string>(js.assigned_languages_json).map((x) => String(x).toLowerCase()));
@@ -63,9 +63,9 @@ export default function AdvisorSettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (me) setAdvisorId(me.id);
-    else setAdvisorId(null);
-  }, [me, setAdvisorId]);
+    if (me) setManagerId(me.id);
+    else setManagerId(null);
+  }, [me, setManagerId]);
 
   const schoolSet = useMemo(() => new Set(schools), [schools]);
   const langSet = useMemo(() => new Set(langs), [langs]);
@@ -116,7 +116,7 @@ export default function AdvisorSettingsPage() {
       return;
     }
     setSaving(true);
-    const res = await fetchJSON("/api/advisors/me/scope", {
+    const res = await fetchJSON("/api/managers/me/scope", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -151,7 +151,7 @@ export default function AdvisorSettingsPage() {
     return (
       <div className="ui-card p-7">
         <div className="text-lg font-black text-violet-950 dark:text-sky-100">Настройки приёма</div>
-        <div className="mt-2 text-sm font-semibold text-violet-800 dark:text-sky-300">Нет доступа. Войдите как эдвайзер.</div>
+        <div className="mt-2 text-sm font-semibold text-violet-800 dark:text-sky-300">Нет доступа. Войдите как менеджер.</div>
       </div>
     );
   }
@@ -160,7 +160,7 @@ export default function AdvisorSettingsPage() {
     <div className="space-y-6">
       <button
         type="button"
-        onClick={() => nav("/advisor")}
+        onClick={() => nav("/manager")}
         className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-extrabold text-violet-900 shadow-sm transition hover:bg-violet-50 dark:border-white/10 dark:bg-slate-900 dark:text-sky-100 dark:hover:bg-white/5"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />

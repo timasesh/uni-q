@@ -6,14 +6,15 @@ import type { Advisor, LiveQueue, Ticket } from "../types";
 import { cn } from "../lib/cn";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
-import { useAdvisorContext } from "../context/AdvisorContext";
+import { useManagerContext } from "../context/ManagerContext";
 import { ticketMatchesAdvisor } from "../lib/advisorScope";
 import { bookingCallableNow } from "../lib/bookingCallable";
-import { hydrateAdvisorWorkedFromServer, syncAdvisorWorkTotalToServer } from "../lib/advisorWorkSync";
+import { hydrateManagerWorkedFromServer, syncManagerWorkTotalToServer } from "../lib/advisorWorkSync";
+import { formatAdvisorReceptionSummary } from "../lib/formatAdvisorReceptionSummary";
 
 type Props = {
-  advisorDark: boolean;
-  setAdvisorDark: (next: boolean) => void;
+  managerDark: boolean;
+  setManagerDark: (next: boolean) => void;
 };
 
 function Switch({
@@ -108,9 +109,9 @@ function HistoryCommentCell({ text, t }: { text: string; t: (k: string) => strin
   );
 }
 
-export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
+export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const { t, lang, setLang } = useI18n();
-  const { setAdvisorId } = useAdvisorContext();
+  const { setManagerId } = useManagerContext();
   const nav = useNavigate();
   const location = useLocation();
   const [me, setMe] = useState<Advisor | null>(null);
@@ -150,21 +151,33 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   }, []);
 
   useEffect(() => {
-    if (location.pathname !== "/advisor") return;
+    if (location.pathname !== "/manager") return;
     void refreshMe();
   }, [location.pathname]);
 
   useEffect(() => {
-    if (me) setAdvisorId(me.id);
-    else setAdvisorId(null);
-  }, [me, setAdvisorId]);
+    if (me) setManagerId(me.id);
+    else setManagerId(null);
+  }, [me, setManagerId]);
 
   useEffect(() => {
     if (!me) return;
     const id = me.id;
-    const kShow = `uniq.advisor.showAllQueue.${id}`;
-    const kAuto = `uniq.advisor.autoCall.${id}`;
-    const kAfter = `uniq.advisor.autoCallAfterDone.${id}`;
+    const kShow = `uniq.manager.showAllQueue.${id}`;
+    const kAuto = `uniq.manager.autoCall.${id}`;
+    const kAfter = `uniq.manager.autoCallAfterDone.${id}`;
+    const legShow = `uniq.advisor.showAllQueue.${id}`;
+    const legAuto = `uniq.advisor.autoCall.${id}`;
+    const legAfter = `uniq.advisor.autoCallAfterDone.${id}`;
+    if (localStorage.getItem(kShow) === null && localStorage.getItem(legShow) != null) {
+      localStorage.setItem(kShow, localStorage.getItem(legShow) || "0");
+    }
+    if (localStorage.getItem(kAuto) === null && localStorage.getItem(legAuto) != null) {
+      localStorage.setItem(kAuto, localStorage.getItem(legAuto) || "0");
+    }
+    if (localStorage.getItem(kAfter) === null && localStorage.getItem(legAfter) != null) {
+      localStorage.setItem(kAfter, localStorage.getItem(legAfter) || "0");
+    }
     if (localStorage.getItem(kShow) === null && localStorage.getItem("uniq.showAllQueue") === "1") {
       localStorage.setItem(kShow, "1");
     }
@@ -177,15 +190,15 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   }, [me?.id]);
 
   async function refreshMe() {
-    const res = await fetchJSON("/api/advisors/me");
+    const res = await fetchJSON("/api/managers/me");
     if (!res.ok) {
       setMe(null);
       return;
     }
     const js = await readJSON<Advisor>(res);
-    hydrateAdvisorWorkedFromServer(js.id, Number(js.total_work_ms) || 0);
+    hydrateManagerWorkedFromServer(js.id, Number(js.total_work_ms) || 0);
     setMe(js);
-    // scope settings are edited on /advisor/settings
+    // scope settings are edited on /manager/settings
   }
 
   const doLogin = async (e: React.FormEvent) => {
@@ -206,7 +219,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
 
   const logout = async () => {
     if (me?.id != null) {
-      await syncAdvisorWorkTotalToServer(me.id);
+      await syncManagerWorkTotalToServer(me.id);
     }
     await fetchJSON("/api/auth/logout", { method: "POST" });
     setMe(null);
@@ -215,7 +228,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   const toggleReception = async () => {
     if (!me) return;
     const isOpenNow = !(me.reception_open === false || me.reception_open === 0);
-    const res = await fetchJSON("/api/advisors/me/reception", {
+    const res = await fetchJSON("/api/managers/me/reception", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ open: !isOpenNow }),
@@ -257,17 +270,17 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
 
   useEffect(() => {
     if (!me) return;
-    localStorage.setItem(`uniq.advisor.showAllQueue.${me.id}`, showAllQueue ? "1" : "0");
+    localStorage.setItem(`uniq.manager.showAllQueue.${me.id}`, showAllQueue ? "1" : "0");
   }, [me?.id, showAllQueue]);
 
   useEffect(() => {
     if (!me) return;
-    localStorage.setItem(`uniq.advisor.autoCall.${me.id}`, autoCall ? "1" : "0");
+    localStorage.setItem(`uniq.manager.autoCall.${me.id}`, autoCall ? "1" : "0");
   }, [me?.id, autoCall]);
 
   useEffect(() => {
     if (!me) return;
-    localStorage.setItem(`uniq.advisor.autoCallAfterDone.${me.id}`, autoCallAfterDone ? "1" : "0");
+    localStorage.setItem(`uniq.manager.autoCallAfterDone.${me.id}`, autoCallAfterDone ? "1" : "0");
   }, [me?.id, autoCallAfterDone]);
 
   const updateTicket = async (ticketId: number, patch: Partial<Ticket>) => {
@@ -285,7 +298,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     const q = new URLSearchParams({ limit: "200", date: historyDate });
-    const res = await fetchJSON(`/api/advisors/me/history?${q}`);
+    const res = await fetchJSON(`/api/managers/me/history?${q}`);
     const js = await readJSON<any>(res);
     setHistoryLoading(false);
     if (!res.ok) {
@@ -315,7 +328,12 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
     void fetchHistory();
   };
 
-  // scope settings are edited on /advisor/settings
+  // scope settings are edited on /manager/settings
+
+  const receptionHeader = useMemo(
+    () => (me ? formatAdvisorReceptionSummary(me, lang) : null),
+    [me, lang]
+  );
 
   const waitingTickets = useMemo(() => {
     const tickets = live?.tickets || [];
@@ -449,10 +467,10 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
   if (!me) {
     return (
       <div className="mx-auto max-w-md ui-card">
-        <div className="text-lg font-extrabold tracking-tight text-violet-950 dark:text-sky-100">{t("advisorLogin")}</div>
+        <div className="text-lg font-extrabold tracking-tight text-violet-950 dark:text-sky-100">{t("managerLogin")}</div>
         <div className="mt-1 text-xs font-semibold text-violet-800 dark:text-sky-300">
           {t("loginHint")} <span className="font-mono">smirnov</span> / <span className="font-mono">ivanov</span>, {t("loginPasswordHint")}{" "}
-          <span className="font-mono">Advisor2026!</span>
+          <span className="font-mono">Manager2026!</span>
         </div>
         <form onSubmit={doLogin} className="mt-4 space-y-3">
           <input
@@ -482,11 +500,18 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
       <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 p-5 text-white shadow-lg shadow-violet-500/25 dark:from-violet-950 dark:via-indigo-950 dark:to-slate-950">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80">{t("advisorPanel")}</div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80">{t("managerPanel")}</div>
             <div className="mt-1 text-xl font-black tracking-tight">{me.name}</div>
-            <div className="mt-1 text-sm font-medium text-violet-100">
-              {me.faculty || ""} {me.department ? `· ${me.department}` : ""} {me.desk_number ? `· окно ${me.desk_number}` : ""}
-            </div>
+            {receptionHeader && (
+              <>
+                <div className="mt-1.5 text-sm font-semibold leading-snug text-violet-50">
+                  {receptionHeader.schoolsLine}
+                </div>
+                <div className="mt-1 max-w-2xl text-xs font-medium leading-relaxed text-violet-100/95">
+                  {receptionHeader.scopeLine}
+                </div>
+              </>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div
@@ -508,7 +533,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                 }
                 onDark
               />
-              <p className="mt-2 max-w-xs text-[10px] font-semibold leading-snug text-white/85">{t("advisorReceptionSelfOnly")}</p>
+              <p className="mt-2 max-w-xs text-[10px] font-semibold leading-snug text-white/85">{t("managerReceptionSelfOnly")}</p>
             </div>
             <button
               type="button"
@@ -799,8 +824,8 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                     </div>
                     <div className="h-px bg-sky-100 dark:bg-white/10" />
                     <Switch
-                      checked={advisorDark}
-                      onChange={setAdvisorDark}
+                      checked={managerDark}
+                      onChange={setManagerDark}
                       label={t("darkTheme")}
                       description={t("darkThemeDesc")}
                     />
@@ -809,7 +834,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                       type="button"
                       onClick={() => {
                         setSettingsOpen(false);
-                        nav("/advisor/settings");
+                        nav("/manager/settings");
                       }}
                       className="w-full rounded-2xl border border-sky-100 bg-white px-4 py-3 text-sm font-extrabold text-blue-950 shadow-sm hover:bg-blue-900 hover:text-white dark:border-white/10 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-sky-500/15"
                     >
@@ -881,7 +906,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                         t("historyQueueWait"),
                         t("historyServiceTime"),
                         t("historyTotalTime"),
-                        t("historyAdvisor"),
+                        t("historyManagerName"),
                         t("historyCategory"),
                         t("historyStatus"),
                         t("historyComment"),
@@ -950,14 +975,14 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                               <button
                                 type="button"
                                 onClick={() => void reopenHistoryTicket(r.id, "queue")}
-                                className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5 text-[10px] font-extrabold text-violet-900 hover:bg-violet-100 dark:border-white/10 dark:bg-white/5 dark:text-sky-100"
+                                className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5 text-[10px] font-extrabold text-violet-900 transition-colors hover:border-neutral-900 hover:bg-neutral-900 hover:text-white dark:border-white/15 dark:bg-white/10 dark:text-sky-100 dark:hover:border-neutral-800 dark:hover:bg-neutral-950 dark:hover:text-white"
                               >
                                 {t("historyReopenQueue")}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => void reopenHistoryTicket(r.id, "service")}
-                                className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-extrabold text-blue-900 hover:bg-blue-100 dark:border-white/10 dark:bg-sky-900/40 dark:text-sky-100"
+                                className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-extrabold text-blue-900 transition-colors hover:border-neutral-900 hover:bg-neutral-900 hover:text-white dark:border-sky-800/50 dark:bg-sky-950/40 dark:text-sky-100 dark:hover:border-neutral-800 dark:hover:bg-neutral-950 dark:hover:text-white"
                               >
                                 {t("historyReopenService")}
                               </button>
@@ -967,7 +992,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                                   setHistoryCommentEditId(r.id);
                                   setHistoryCommentDraft(String(r.comment || ""));
                                 }}
-                                className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-extrabold text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100"
+                                className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-extrabold text-amber-950 transition-colors hover:border-neutral-900 hover:bg-neutral-900 hover:text-white dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:border-neutral-800 dark:hover:bg-neutral-950 dark:hover:text-white"
                               >
                                 {t("historyEditComment")}
                               </button>
@@ -1015,7 +1040,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
               <button
                 type="button"
                 onClick={() => void reopenHistoryTicket(historyCommentEditId, "comment")}
-                className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-black text-white hover:bg-blue-600"
+                className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-neutral-900 dark:hover:bg-neutral-950"
               >
                 {t("historyCommentSave")}
               </button>
@@ -1025,7 +1050,7 @@ export default function AdvisorPage({ advisorDark, setAdvisorDark }: Props) {
                   setHistoryCommentEditId(null);
                   setHistoryCommentDraft("");
                 }}
-                className="rounded-xl border border-sky-200 px-4 py-2.5 text-sm font-bold text-blue-900 dark:border-white/10 dark:text-sky-200"
+                className="rounded-xl border border-sky-200 px-4 py-2.5 text-sm font-bold text-blue-900 transition-colors hover:border-neutral-900 hover:bg-neutral-900 hover:text-white dark:border-white/10 dark:text-sky-200 dark:hover:border-neutral-700 dark:hover:bg-neutral-950 dark:hover:text-white"
               >
                 {t("close")}
               </button>

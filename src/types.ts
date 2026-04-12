@@ -11,7 +11,7 @@ export type Ticket = {
   language_section?: string | null;
   course?: string | null;
   advisor_id?: number | null;
-  /** Для WAITING: единственный эдвайзер, которому показывают этот талон (детерминированный выбор при пересечении зон). */
+  /** Для WAITING: единственный менеджер, которому показывают этот талон (детерминированный выбор при пересечении зон). */
   route_advisor_id?: number | null;
   advisor_name?: string | null;
   advisor_desk?: string | null;

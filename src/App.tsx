@@ -1,4 +1,4 @@
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import StudentPage from "./pages/StudentPage";
 import FaqPage from "./pages/FaqPage";
 import ChatWidget from "./components/ChatWidget";
@@ -8,44 +8,49 @@ import AdminApp from "./admin/AdminApp";
 
 import { useEffect, useState } from "react";
 import { useI18n } from "./i18n";
-import { useAdvisorContext } from "./context/AdvisorContext";
-import AdvisorWorkTimer from "./components/AdvisorWorkTimer";
+import { useManagerContext } from "./context/ManagerContext";
+import ManagerWorkTimer from "./components/ManagerWorkTimer";
 
 export default function App() {
   const loc = useLocation();
-  const isAdvisor = loc.pathname.startsWith("/advisor");
+  const isManager = loc.pathname.startsWith("/manager");
   const isAdmin = loc.pathname.startsWith("/admin");
-  const { advisorId } = useAdvisorContext();
+  const { managerId } = useManagerContext();
   const { t, lang, setLang } = useI18n();
 
-  const [advisorDark, setAdvisorDark] = useState(false);
+  const [managerDark, setManagerDark] = useState(false);
 
   useEffect(() => {
-    if (!isAdvisor || advisorId == null) return;
-    const k = `uniq.advisor.theme.${advisorId}`;
+    if (!isManager || managerId == null) return;
+    const k = `uniq.manager.theme.${managerId}`;
     let v = localStorage.getItem(k);
+    if (v === null) {
+      const legacy = localStorage.getItem(`uniq.advisor.theme.${managerId}`);
+      if (legacy === "dark" || legacy === "light") {
+        localStorage.setItem(k, legacy);
+        v = legacy;
+      }
+    }
     if (v === null && localStorage.getItem("uniq.theme") === "dark") {
       localStorage.setItem(k, "dark");
       v = "dark";
     }
-    setAdvisorDark(v === "dark");
-  }, [isAdvisor, advisorId]);
+    setManagerDark(v === "dark");
+  }, [isManager, managerId]);
 
   useEffect(() => {
-    if (!isAdvisor || advisorId == null) return;
-    localStorage.setItem(`uniq.advisor.theme.${advisorId}`, advisorDark ? "dark" : "light");
-  }, [isAdvisor, advisorId, advisorDark]);
+    if (!isManager || managerId == null) return;
+    localStorage.setItem(`uniq.manager.theme.${managerId}`, managerDark ? "dark" : "light");
+  }, [isManager, managerId, managerDark]);
 
-  const applyAdvisorDark = isAdvisor && advisorId != null && advisorDark;
+  const applyManagerDark = isManager && managerId != null && managerDark;
 
   useEffect(() => {
     const root = document.documentElement;
-    // На /admin класс `dark` на <html> выставляет только AdminLayout — иначе этот эффект
-    // (applyAdvisorDark === false) снимает dark после дочернего эффекта и ломает переключатель темы.
     if (isAdmin) return;
-    if (applyAdvisorDark) root.classList.add("dark");
+    if (applyManagerDark) root.classList.add("dark");
     else root.classList.remove("dark");
-  }, [applyAdvisorDark, isAdmin]);
+  }, [applyManagerDark, isAdmin]);
 
   if (loc.pathname.startsWith("/admin")) {
     return <AdminApp />;
@@ -66,8 +71,8 @@ export default function App() {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {isAdvisor && advisorId != null && <AdvisorWorkTimer advisorId={advisorId} />}
-              {!isAdvisor && (
+              {isManager && managerId != null && <ManagerWorkTimer managerId={managerId} />}
+              {!isManager && (
                 <label className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-2 py-1 backdrop-blur-sm">
                   <span className="sr-only">{t("langUi")}</span>
                   <select
@@ -89,7 +94,7 @@ export default function App() {
                 </label>
               )}
               <div className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-extrabold text-white backdrop-blur-sm">
-                {isAdvisor ? t("advisorPanel") : t("studentPanel")}
+                {isManager ? t("managerPanel") : t("studentPanel")}
               </div>
             </div>
           </div>
@@ -100,11 +105,13 @@ export default function App() {
         <Routes>
           <Route path="/" element={<StudentPage />} />
           <Route path="/faq" element={<FaqPage />} />
+          <Route path="/advisor" element={<Navigate to="/manager" replace />} />
+          <Route path="/advisor/settings" element={<Navigate to="/manager/settings" replace />} />
           <Route
-            path="/advisor"
-            element={<AdvisorPage advisorDark={advisorDark} setAdvisorDark={setAdvisorDark} />}
+            path="/manager"
+            element={<AdvisorPage managerDark={managerDark} setManagerDark={setManagerDark} />}
           />
-          <Route path="/advisor/settings" element={<AdvisorSettingsPage />} />
+          <Route path="/manager/settings" element={<AdvisorSettingsPage />} />
         </Routes>
       </main>
 

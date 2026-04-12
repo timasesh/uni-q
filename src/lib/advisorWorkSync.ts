@@ -1,20 +1,15 @@
 import { fetchJSON } from "../api";
 
-export function advisorWorkStorageKeys(advisorId: number) {
+export function managerWorkStorageKeys(managerId: number) {
   return {
-    worked: `uniq.advisor.workedMs.${advisorId}`,
-    segment: `uniq.advisor.workSegmentStart.${advisorId}`,
+    worked: `uniq.manager.workedMs.${managerId}`,
+    segment: `uniq.manager.workSegmentStart.${managerId}`,
   };
 }
 
-function todayDateKeyLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function ensureTodayBucket(advisorId: number): void {
-  const dk = `uniq.advisor.workTodayDate.${advisorId}`;
-  const mk = `uniq.advisor.workTodayMs.${advisorId}`;
+function ensureTodayBucket(managerId: number): void {
+  const dk = `uniq.manager.workTodayDate.${managerId}`;
+  const mk = `uniq.manager.workTodayMs.${managerId}`;
   const today = todayDateKeyLocal();
   if (localStorage.getItem(dk) !== today) {
     localStorage.setItem(dk, today);
@@ -22,12 +17,17 @@ function ensureTodayBucket(advisorId: number): void {
   }
 }
 
+function todayDateKeyLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** Накоплено за текущий календарный день (локально), включая открытый сегмент приёма. */
-export function getTodayWorkedMsSnapshot(advisorId: number): number {
-  ensureTodayBucket(advisorId);
-  const mk = `uniq.advisor.workTodayMs.${advisorId}`;
+export function getTodayWorkedMsSnapshot(managerId: number): number {
+  ensureTodayBucket(managerId);
+  const mk = `uniq.manager.workTodayMs.${managerId}`;
   let base = Number(localStorage.getItem(mk)) || 0;
-  const { segment: sk } = advisorWorkStorageKeys(advisorId);
+  const { segment: sk } = managerWorkStorageKeys(managerId);
   const seg = localStorage.getItem(sk);
   if (seg) {
     const add = Date.now() - Number(seg);
@@ -37,17 +37,17 @@ export function getTodayWorkedMsSnapshot(advisorId: number): number {
 }
 
 /** Учесть закрытый интервал приёма в «сегодня» (локально). */
-export function bumpTodayWorkedMs(advisorId: number, deltaMs: number): void {
+export function bumpTodayWorkedMs(managerId: number, deltaMs: number): void {
   if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
-  ensureTodayBucket(advisorId);
-  const mk = `uniq.advisor.workTodayMs.${advisorId}`;
+  ensureTodayBucket(managerId);
+  const mk = `uniq.manager.workTodayMs.${managerId}`;
   const cur = Number(localStorage.getItem(mk)) || 0;
   localStorage.setItem(mk, String(cur + Math.floor(deltaMs)));
 }
 
 /** Текущий накопленный интервал: сохранённые ms + незакрытый сегмент (если есть). */
-export function getAdvisorWorkedMsSnapshot(advisorId: number): number {
-  const { worked: wk, segment: sk } = advisorWorkStorageKeys(advisorId);
+export function getManagerWorkedMsSnapshot(managerId: number): number {
+  const { worked: wk, segment: sk } = managerWorkStorageKeys(managerId);
   const worked = Number(localStorage.getItem(wk)) || 0;
   const seg = localStorage.getItem(sk);
   if (!seg) return worked;
@@ -57,8 +57,8 @@ export function getAdvisorWorkedMsSnapshot(advisorId: number): number {
 }
 
 /** Вносит открытый сегмент в базовое значение в localStorage (как при паузе). Возвращает итог. */
-export function mergeOpenWorkSegmentIntoStorage(advisorId: number): number {
-  const { worked: wk, segment: sk } = advisorWorkStorageKeys(advisorId);
+export function mergeOpenWorkSegmentIntoStorage(managerId: number): number {
+  const { worked: wk, segment: sk } = managerWorkStorageKeys(managerId);
   const worked = Number(localStorage.getItem(wk)) || 0;
   const seg = localStorage.getItem(sk);
   if (!seg) return worked;
@@ -66,16 +66,16 @@ export function mergeOpenWorkSegmentIntoStorage(advisorId: number): number {
   const extra = Number.isFinite(add) && add > 0 ? add : 0;
   const total = worked + extra;
   localStorage.setItem(wk, String(total));
-  bumpTodayWorkedMs(advisorId, extra);
+  bumpTodayWorkedMs(managerId, extra);
   localStorage.removeItem(sk);
   return total;
 }
 
-/** Сохраняет накопленное время в БД пока сессия эдвайзера ещё действует (перед выходом и т.п.). */
-export async function syncAdvisorWorkTotalToServer(advisorId: number): Promise<boolean> {
-  const totalMs = mergeOpenWorkSegmentIntoStorage(advisorId);
-  const todayMs = getTodayWorkedMsSnapshot(advisorId);
-  const res = await fetchJSON("/api/advisors/me/work-total", {
+/** Сохраняет накопленное время в БД пока сессия менеджера ещё действует (перед выходом и т.п.). */
+export async function syncManagerWorkTotalToServer(managerId: number): Promise<boolean> {
+  const totalMs = mergeOpenWorkSegmentIntoStorage(managerId);
+  const todayMs = getTodayWorkedMsSnapshot(managerId);
+  const res = await fetchJSON("/api/managers/me/work-total", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ totalMs: Math.floor(totalMs), todayMs }),
@@ -83,10 +83,12 @@ export async function syncAdvisorWorkTotalToServer(advisorId: number): Promise<b
   return res.ok;
 }
 
-/** Подтянуть серверное время в localStorage, если в БД больше (другой браузер / после сброса кэша). */
-export function hydrateAdvisorWorkedFromServer(advisorId: number, serverTotalMs: number): void {
+/**
+ * Источник правды — значение на аккаунте (БД). Подменяет локальный «накопленный» тотал,
+ * чтобы не расходиться с сервером после другого устройства или сброса кэша.
+ */
+export function hydrateManagerWorkedFromServer(managerId: number, serverTotalMs: number): void {
   if (!Number.isFinite(serverTotalMs) || serverTotalMs < 0) return;
-  const { worked: wk } = advisorWorkStorageKeys(advisorId);
-  const local = Number(localStorage.getItem(wk)) || 0;
-  if (serverTotalMs > local) localStorage.setItem(wk, String(Math.floor(serverTotalMs)));
+  const { worked: wk } = managerWorkStorageKeys(managerId);
+  localStorage.setItem(wk, String(Math.floor(serverTotalMs)));
 }

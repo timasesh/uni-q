@@ -11,7 +11,7 @@ const SECTION_TITLES: Record<Lang, string[]> = {
     "Иностранным студентам",
     "Кампус и инфраструктура",
     "Электронные сервисы",
-    "Контакты эдвайзинг-центра",
+    "Контакты центра консультаций",
     "Прочее",
   ],
   eng: [
@@ -47,15 +47,15 @@ function buildItems(lang: Lang, sectionIndex: number) {
     const templates: Record<Lang, { q: string; a: string }> = {
       rus: {
         q: `Раздел ${n}, вопрос ${m}: что мне сделать в первую очередь?`,
-        a: `Ответ ${n}.${m}: уточните детали у эдвайзера или на стойке информации. Актуальные правила публикуются на сайте университета.`,
+        a: `Ответ ${n}.${m}: уточните детали у менеджера или на стойке информации. Актуальные правила публикуются на сайте университета.`,
       },
       eng: {
         q: `Section ${n}, Q${m}: what should I do first?`,
-        a: `Answer ${n}.${m}: check with your advisor or the info desk. Official rules are published on the university website.`,
+        a: `Answer ${n}.${m}: check with your manager or the info desk. Official rules are published on the university website.`,
       },
       kaz: {
         q: `${n}-бөлім, ${m}-сұрақ: алдымен не істеу керек?`,
-        a: `Жауап ${n}.${m}: эдвайзер немесе ақпарат орталығымен уағыттасыңыз. Ережелер университет сайтында жарияланады.`,
+        a: `Жауап ${n}.${m}: менеджер немесе ақпарат орталығымен уағыттасыңыз. Ережелер университет сайтында жарияланады.`,
       },
     };
     return templates[lang];

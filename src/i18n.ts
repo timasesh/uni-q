@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { useAdvisorContext } from "./context/AdvisorContext";
+import { useManagerContext } from "./context/ManagerContext";
 import { useAdminContext } from "./context/AdminContext";
 
 export type Lang = "rus" | "eng" | "kaz";
@@ -9,9 +9,10 @@ const STUDENT_LANG_KEY = "uniq.student.lang";
 const LEGACY_LANG_KEY = "uniq.uiLang";
 const EVT = "uniq-ui-lang-change";
 
-function advisorLangKey(id: number) {
-  return `uniq.advisor.lang.${id}`;
+function managerLangKey(id: number) {
+  return `uniq.manager.lang.${id}`;
 }
+const LEGACY_MANAGER_LANG_KEY = (id: number) => `uniq.advisor.lang.${id}`;
 
 function adminLangKey(id: number) {
   return `uniq.admin.lang.${id}`;
@@ -46,18 +47,24 @@ export function setStudentLang(lang: Lang) {
   window.dispatchEvent(new CustomEvent(EVT, { detail: lang }));
 }
 
-export function getAdvisorLang(id: number): Lang {
-  const v = localStorage.getItem(advisorLangKey(id));
+export function getManagerLang(id: number): Lang {
+  let v = localStorage.getItem(managerLangKey(id));
+  if (!v) v = localStorage.getItem(LEGACY_MANAGER_LANG_KEY(id));
   if (v === "rus" || v === "eng" || v === "kaz") return v;
   return "rus";
 }
 
-export function setAdvisorLang(id: number, lang: Lang) {
-  localStorage.setItem(advisorLangKey(id), lang);
+export function setManagerLang(id: number, lang: Lang) {
+  localStorage.setItem(managerLangKey(id), lang);
   window.dispatchEvent(new CustomEvent(EVT, { detail: lang }));
 }
 
-/** @deprecated use setStudentLang / setAdvisorLang */
+/** @deprecated use getManagerLang */
+export const getAdvisorLang = getManagerLang;
+/** @deprecated use setManagerLang */
+export const setAdvisorLang = setManagerLang;
+
+/** @deprecated use setStudentLang / setManagerLang */
 export function setUiLang(lang: Lang) {
   setStudentLang(lang);
 }
@@ -66,7 +73,7 @@ const dict: Record<Lang, Record<string, string>> = {
   rus: {
     appTagline: "очередь для консультаций",
     studentPanel: "Панель студента",
-    advisorPanel: "Панель эдвайзера",
+    managerPanel: "Панель менеджера",
     queueNow: "Очередь сейчас",
     inQueue: "В очереди",
     registrationOpen: "Запись открыта",
@@ -90,7 +97,7 @@ const dict: Record<Lang, Record<string, string>> = {
     specialty: "Специальность",
     course: "Курс",
     department: "Отделение",
-    advisorLogin: "Вход для эдвайзера",
+    managerLogin: "Вход для менеджера",
     login: "Логин",
     password: "Пароль",
     signIn: "Войти",
@@ -141,7 +148,7 @@ const dict: Record<Lang, Record<string, string>> = {
     historyQueueWait: "Ожидание в очереди",
     historyServiceTime: "Время обслуживания",
     historyTotalTime: "Всего от регистрации",
-    historyAdvisor: "Эдвайзер",
+    historyManagerName: "Менеджер",
     historyCategory: "Категория",
     historyStatus: "Статус",
     historyComment: "Комментарий",
@@ -157,14 +164,20 @@ const dict: Record<Lang, Record<string, string>> = {
     adminWindows: "Настройка окон",
     adminWindowsTitle: "Настройка окон",
     adminWindowsHint:
-      "Для каждого окна выберите сотрудника. Когда студента вызывают к этому эдвайзеру, в приложении показывается схема именно этого окна (как у гостя на экране очереди).",
+      "Для каждого окна выберите сотрудника. Когда студента вызывают к этому менеджеру, в приложении показывается схема именно этого окна (как у гостя на экране очереди).",
     adminWindowsColWindow: "Окно",
     adminWindowsColEmployee: "Сотрудник",
     adminWindowsColPreview: "Схема окна",
     adminWindowsEmpty: "— не назначено —",
     adminWindowsSaving: "Сохранение…",
     adminStats: "Статистика",
-    adminStaffList: "Список сотрудников (эдвайзеры)",
+    adminStaffList: "Список сотрудников (менеджеры)",
+    adminAddEmployee: "Новый сотрудник",
+    adminColFirstName: "Имя",
+    adminColLastName: "Фамилия",
+    adminColPassword: "Пароль",
+    adminEmployeeCreate: "Добавить",
+    adminEmployeeCreated: "Сотрудник создан",
     adminColName: "Имя",
     adminColLogin: "Логин",
     adminColFaculty: "Каф./отделение",
@@ -179,6 +192,39 @@ const dict: Record<Lang, Record<string, string>> = {
     adminFaqStatsEmpty: "Пока нет данных.",
     adminFaqStatsChartAria: "График открытий FAQ без талона по дням",
     adminFaqStatsAxisHint: "Подписи: ММ-ДД (локальная дата). Полная дата в подсказке столбца.",
+    adminFaqAllTime: "За всё время",
+    adminFaqTotal: "Всего открытий",
+    adminFaqColDate: "Дата",
+    adminFaqColCount: "Кол-во",
+    adminPresetToday: "Сегодня",
+    adminPresetWeek: "7 дней",
+    adminPresetMonth: "Месяц",
+    adminFilterVisitStatus: "Статус визита",
+    adminFilterAny: "Любой",
+    adminFilterSchool: "Школа",
+    adminFilterSchoolPh: "фрагмент названия…",
+    adminFilterStars: "Оценка",
+    adminStatsHub: "Выберите раздел для детальной статистики.",
+    adminWaitTitle: "Время ожидания до вызова",
+    adminWaitHint:
+      "По дате регистрации талона: минуты от создания до вызова (или до начала приёма, если вызова не было). Таблица и CSV.",
+    adminWaitFilterStatus: "Статус талона",
+    adminWaitMinMin: "Мин. минут",
+    adminWaitMaxMin: "Макс. минут",
+    adminWaitAvgShort: "Среднее, мин",
+    adminWaitMedianShort: "Медиана, мин",
+    adminWaitCountShort: "Талонов",
+    adminWaitEmpty: "Нет записей с известным временем ожидания за период.",
+    adminWaitColRegistered: "Регистрация",
+    adminWaitColCalled: "Вызов",
+    adminWaitColServiceStart: "Начало приёма",
+    adminWaitColMinutes: "Ожидание, мин",
+    adminBookingsTitle: "Брони по слотам",
+    adminBookingsHint:
+      "Студенты с выбранным временем прихода (дата слота в локальном времени). Фильтры и выгрузка CSV.",
+    adminBookingsEmpty: "Нет броней за выбранный период.",
+    adminBookingsColSlot: "Слот (время)",
+    adminBookingsColRegistered: "В очереди",
     adminLoad: "Нагрузка",
     adminLoadTitle: "Нагрузка по часам",
     adminLoadHint:
@@ -204,7 +250,7 @@ const dict: Record<Lang, Record<string, string>> = {
     studentReviewThanks: "Спасибо за отзыв!",
     studentCardWait: "Ожидание",
     studentCardStatus: "Статус",
-    studentGoToAdvisor: "Подойдите к эдвайзеру",
+    studentGoToManager: "Подойдите к менеджеру",
     waitingUntilBooking: "~{n} мин до времени брони",
     waitingQueueEstimate: "~{n} мин (очередь)",
     officeSchemeBtn: "Схема кабинета",
@@ -214,11 +260,11 @@ const dict: Record<Lang, Record<string, string>> = {
     officeSchemeWaitingHint: "Общая схема кабинета. После вызова откроется схема вашего окна.",
     studentQueueShownPartial: "Показаны первые {n} номеров",
     registrationClosedStudentHint:
-      "Запись по вашему направлению закрыта — дождитесь, пока эдвайзер откроет приём для этой линии.",
+      "Запись по вашему направлению закрыта — дождитесь, пока менеджер откроет приём для этой линии.",
     registrationLineNoMatch: "Нет линии",
-    registrationLineClosedByAdvisor: "Закрыто",
+    registrationLineClosedByManager: "Закрыто",
     registrationPickProfileHint:
-      "Сначала выберите школу, специальность, отделение и курс — тогда станет видно, открыта ли запись именно к вашему эдвайзеру.",
+      "Сначала выберите школу, специальность, отделение и курс — тогда станет видно, открыта ли запись именно к вашему менеджеру.",
     missedStudentTitle: "Вы не явились к очереди",
     missedStudentBody:
       "Подскажите, пожалуйста, в чём была причина (необязательно). Это поможет нам улучшить сервис.",
@@ -230,24 +276,24 @@ const dict: Record<Lang, Record<string, string>> = {
     historyReopenService: "Снова на приём",
     historyEditComment: "Комментарий",
     historyCommentSave: "Сохранить",
-    advisorReceptionSelfOnly: "Закрывает запись только в вашу зону приёма, не у других эдвайзеров.",
+    managerReceptionSelfOnly: "Закрывает запись только в вашу зону приёма, не у других менеджеров.",
     studentTicketUpdating: "Обновление…",
     faqTitle: "Частые вопросы",
     faqIntro: "Ответы и ссылки. Раздел «FAQ без записи в очередь» учитывается в статистике.",
-    mapTitle: "Схема эдвайзинг-центра",
+    mapTitle: "Схема центра консультаций",
     mapBody:
-      "Корпус главный, 2-й этаж. Зона эдвайзинга — площадь у лифтов. Окна A–D: по табло «Ваш номер» подойдите к указанному окну.",
+      "Корпус главный, 2-й этаж. Зона приёма — площадь у лифтов. Окна A–D: по табло «Ваш номер» подойдите к указанному окну.",
     chatbotBtn: "Чат-помощник",
     chatbotHint: "Откроется в новой вкладке",
     chatWidgetTitle: "Чат-помощник",
-    chatWidgetSubtitle: "Эдвайзинг-центр",
+    chatWidgetSubtitle: "Центр консультаций",
     chatWidgetWelcome:
       "Здравствуйте! Напишите вопрос ниже и нажмите «Отправить» — откроется диалог с ботом в Telegram, текст сообщения будет скопирован в буфер обмена.",
     chatWidgetPlaceholder: "Ваш вопрос…",
     chatWidgetSend: "Отправить",
     chatWidgetAfterSend:
       "Чат открыт в новой вкладке. При необходимости вставьте сообщение в поле ввода Telegram (Ctrl+V).",
-    chatWidgetFooter: "Полные ответы даёт Telegram-бот эдвайзинг-центра.",
+    chatWidgetFooter: "Полные ответы даёт Telegram-бот центра консультаций.",
     school_s0: "Школа Цифровых Технологий",
     school_s1: "Школа Менеджмента",
     school_s2: "Школа Экономики и Финансов",
@@ -294,7 +340,7 @@ const dict: Record<Lang, Record<string, string>> = {
       "По умолчанию — сегодня. Другой день: только ваши завершённые приёмы за выбранную дату.",
     adminVisitsTitle: "История визитов за период",
     adminVisitsHint:
-      "Интервал по дате завершения приёма. Таблица и CSV — все эдвайзеры; для Excel включена кодировка UTF-8.",
+      "Интервал по дате завершения приёма. Таблица и CSV — все менеджеры; для Excel включена кодировка UTF-8.",
     adminVisitsFrom: "С даты",
     adminVisitsTo: "По дату",
     adminVisitsShow: "Показать",
@@ -305,7 +351,7 @@ const dict: Record<Lang, Record<string, string>> = {
     adminVisitsColFinished: "Завершено",
     adminVisitsColStudent: "Студент",
     adminVisitsColSchool: "Школа / спец.",
-    adminVisitsColAdvisor: "Эдвайзер",
+    adminVisitsColManager: "Менеджер",
     adminVisitsColDesk: "Окно",
     adminVisitsColStatus: "Статус",
     adminVisitsColRepeat: "Повтор",
@@ -318,7 +364,7 @@ const dict: Record<Lang, Record<string, string>> = {
       "Фильтр по дате отправки отзыва (не по дате визита). CSV с разделителем «;» и UTF-8 BOM — удобно открывать в Excel.",
     adminReviewsColSubmitted: "Дата отзыва",
     adminReviewsColStudent: "Студент",
-    adminReviewsColAdvisor: "Сотрудник",
+    adminReviewsColManager: "Менеджер",
     adminReviewsColStars: "Оценка",
     adminReviewsColSchool: "Школа / спец.",
     adminReviewsColVisitDone: "Визит завершён",
@@ -331,11 +377,11 @@ const dict: Record<Lang, Record<string, string>> = {
     adminStatExport: "Выгрузка и период",
     adminStatExportDesc: "Таблица визитов за даты, выгрузка CSV для Excel.",
     adminStatWait: "Время ожидания",
-    adminStatWaitDesc: "Средняя и медианная задержка до вызова (скоро).",
+    adminStatWaitDesc: "Среднее и медианное время до вызова, таблица по талонам.",
     adminStatReviews: "Отзывы студентов",
     adminStatReviewsDesc: "Оценки 1–5★ и комментарии после приёма.",
     adminStatLoad: "Нагрузка на приём",
-    adminStatLoadDesc: "Талоны за сегодня, пиковые часы (скоро).",
+    adminStatLoadDesc: "Регистрации и вызовы по часам за выбранный день.",
     adminStatBooking: "Брони по слотам",
     adminStatBookingDesc: "Записи с желаемым временем прихода.",
     adminStatCount: "событий",
@@ -346,7 +392,7 @@ const dict: Record<Lang, Record<string, string>> = {
   eng: {
     appTagline: "advising queue",
     studentPanel: "Student Panel",
-    advisorPanel: "Advisor Panel",
+    managerPanel: "Manager panel",
     queueNow: "Queue Now",
     inQueue: "In queue",
     registrationOpen: "Registration open",
@@ -370,7 +416,7 @@ const dict: Record<Lang, Record<string, string>> = {
     specialty: "Specialty",
     course: "Course",
     department: "Language section",
-    advisorLogin: "Advisor Login",
+    managerLogin: "Manager login",
     login: "Login",
     password: "Password",
     signIn: "Sign in",
@@ -421,7 +467,7 @@ const dict: Record<Lang, Record<string, string>> = {
     historyQueueWait: "Queue wait",
     historyServiceTime: "Desk service time",
     historyTotalTime: "Total since registration",
-    historyAdvisor: "Advisor",
+    historyManagerName: "Manager",
     historyCategory: "Category",
     historyStatus: "Status",
     historyComment: "Comment",
@@ -437,14 +483,20 @@ const dict: Record<Lang, Record<string, string>> = {
     adminWindows: "Window setup",
     adminWindowsTitle: "Window setup",
     adminWindowsHint:
-      "Assign an advisor to each window. When a student is called to that advisor, the app shows the map for that window (same as on the student queue screen).",
+      "Assign a manager to each window. When a student is called to that window, the app shows the map for it (same as on the student queue screen).",
     adminWindowsColWindow: "Window",
-    adminWindowsColEmployee: "Advisor",
+    adminWindowsColEmployee: "Manager",
     adminWindowsColPreview: "Window map",
     adminWindowsEmpty: "— unassigned —",
     adminWindowsSaving: "Saving…",
     adminStats: "Statistics",
-    adminStaffList: "Staff list (advisors)",
+    adminStaffList: "Staff list (managers)",
+    adminAddEmployee: "New employee",
+    adminColFirstName: "First name",
+    adminColLastName: "Last name",
+    adminColPassword: "Password",
+    adminEmployeeCreate: "Add",
+    adminEmployeeCreated: "Employee created",
     adminColName: "Name",
     adminColLogin: "Login",
     adminColFaculty: "Faculty / dept.",
@@ -459,6 +511,38 @@ const dict: Record<Lang, Record<string, string>> = {
     adminFaqStatsEmpty: "No data yet.",
     adminFaqStatsChartAria: "Chart: FAQ opens without ticket by day",
     adminFaqStatsAxisHint: "Labels: MM-DD (local). Hover a bar for full date.",
+    adminFaqAllTime: "All time",
+    adminFaqTotal: "Total opens",
+    adminFaqColDate: "Date",
+    adminFaqColCount: "Count",
+    adminPresetToday: "Today",
+    adminPresetWeek: "7 days",
+    adminPresetMonth: "Month",
+    adminFilterVisitStatus: "Visit status",
+    adminFilterAny: "Any",
+    adminFilterSchool: "School",
+    adminFilterSchoolPh: "part of name…",
+    adminFilterStars: "Rating",
+    adminStatsHub: "Pick a section for detailed statistics.",
+    adminWaitTitle: "Wait time until called",
+    adminWaitHint:
+      "By ticket registration date: minutes from creation to call (or to service start if no call). Table and CSV.",
+    adminWaitFilterStatus: "Ticket status",
+    adminWaitMinMin: "Min minutes",
+    adminWaitMaxMin: "Max minutes",
+    adminWaitAvgShort: "Average, min",
+    adminWaitMedianShort: "Median, min",
+    adminWaitCountShort: "Tickets",
+    adminWaitEmpty: "No rows with wait data in this range.",
+    adminWaitColRegistered: "Registered",
+    adminWaitColCalled: "Called",
+    adminWaitColServiceStart: "Service start",
+    adminWaitColMinutes: "Wait, min",
+    adminBookingsTitle: "Bookings by slot",
+    adminBookingsHint: "Students with preferred arrival time (local slot date). Filters and CSV export.",
+    adminBookingsEmpty: "No bookings in this range.",
+    adminBookingsColSlot: "Slot (time)",
+    adminBookingsColRegistered: "Queued at",
     adminLoad: "Workload",
     adminLoadTitle: "Hourly workload",
     adminLoadHint:
@@ -484,7 +568,7 @@ const dict: Record<Lang, Record<string, string>> = {
     studentReviewThanks: "Thanks for your feedback!",
     studentCardWait: "Wait time",
     studentCardStatus: "Status",
-    studentGoToAdvisor: "Please go to the advisor",
+    studentGoToManager: "Please go to the manager",
     waitingUntilBooking: "~{n} min until your booking time",
     waitingQueueEstimate: "~{n} min (queue)",
     officeSchemeBtn: "Office map",
@@ -494,11 +578,11 @@ const dict: Record<Lang, Record<string, string>> = {
     officeSchemeWaitingHint: "General office map. After you are called, your window map will open.",
     studentQueueShownPartial: "Showing first {n} tickets",
     registrationClosedStudentHint:
-      "Registration for your line is closed — wait until the advisor opens intake for this profile.",
+      "Registration for your line is closed — wait until a manager opens intake for this profile.",
     registrationLineNoMatch: "No line",
-    registrationLineClosedByAdvisor: "Closed",
+    registrationLineClosedByManager: "Closed",
     registrationPickProfileHint:
-      "Choose school, specialty, language section, and course first — then you will see if intake is open for your advisor.",
+      "Choose school, specialty, language section, and course first — then you will see if intake is open for your manager.",
     missedStudentTitle: "You missed your turn",
     missedStudentBody: "Please tell us why, if you wish — it helps us improve the service.",
     missedStudentPlaceholder: "Reason (optional)…",
@@ -509,24 +593,24 @@ const dict: Record<Lang, Record<string, string>> = {
     historyReopenService: "Resume service",
     historyEditComment: "Comment",
     historyCommentSave: "Save",
-    advisorReceptionSelfOnly: "Closes registration only for your intake zone, not for other advisors.",
+    managerReceptionSelfOnly: "Closes registration only for your intake zone, not for other managers.",
     studentTicketUpdating: "Updating…",
     faqTitle: "FAQ",
     faqIntro: "Answers and links. “FAQ without joining the queue” is tracked for statistics.",
-    mapTitle: "Advising center map",
+    mapTitle: "Consultation center map",
     mapBody:
-      "Main building, 2nd floor. Advising zone near the elevators. Windows A–D: when your number is called, go to the desk shown.",
+      "Main building, 2nd floor. Reception zone near the elevators. Windows A–D: when your number is called, go to the desk shown.",
     chatbotBtn: "Chat assistant",
     chatbotHint: "Opens in a new tab",
     chatWidgetTitle: "Chat assistant",
-    chatWidgetSubtitle: "Advising center",
+    chatWidgetSubtitle: "Consultation center",
     chatWidgetWelcome:
       "Hi! Type your question below and tap Send — a Telegram chat with the bot will open and your message will be copied to the clipboard.",
     chatWidgetPlaceholder: "Your question…",
     chatWidgetSend: "Send",
     chatWidgetAfterSend:
       "Telegram opened in a new tab. Paste your message into the input if needed (Ctrl/Cmd+V).",
-    chatWidgetFooter: "Full answers are provided by the advising center Telegram bot.",
+    chatWidgetFooter: "Full answers are provided by the consultation center Telegram bot.",
     school_s0: "School of Digital Technologies",
     school_s1: "School of Management",
     school_s2: "School of Economics and Finance",
@@ -571,7 +655,7 @@ const dict: Record<Lang, Record<string, string>> = {
     historyPickDate: "Date",
     historyDateHint: "Defaults to today. Pick a day to see only your completed visits that day.",
     adminVisitsTitle: "Visit history by period",
-    adminVisitsHint: "Filter by visit completion date. Table and CSV include all advisors; UTF-8 BOM for Excel.",
+    adminVisitsHint: "Filter by visit completion date. Table and CSV include all managers; UTF-8 BOM for Excel.",
     adminVisitsFrom: "From",
     adminVisitsTo: "To",
     adminVisitsShow: "Show",
@@ -582,7 +666,7 @@ const dict: Record<Lang, Record<string, string>> = {
     adminVisitsColFinished: "Finished",
     adminVisitsColStudent: "Student",
     adminVisitsColSchool: "School / major",
-    adminVisitsColAdvisor: "Advisor",
+    adminVisitsColManager: "Manager",
     adminVisitsColDesk: "Desk",
     adminVisitsColStatus: "Status",
     adminVisitsColRepeat: "Repeat",
@@ -595,7 +679,7 @@ const dict: Record<Lang, Record<string, string>> = {
       "Filtered by review submission date (not visit date). CSV uses “;” and UTF-8 BOM for Excel.",
     adminReviewsColSubmitted: "Review date",
     adminReviewsColStudent: "Student",
-    adminReviewsColAdvisor: "Staff",
+    adminReviewsColManager: "Manager",
     adminReviewsColStars: "Rating",
     adminReviewsColSchool: "School / major",
     adminReviewsColVisitDone: "Visit finished",
@@ -608,11 +692,11 @@ const dict: Record<Lang, Record<string, string>> = {
     adminStatExport: "Export and period",
     adminStatExportDesc: "Visit table by date range, CSV export for Excel.",
     adminStatWait: "Wait time",
-    adminStatWaitDesc: "Average/median wait until called (coming soon).",
+    adminStatWaitDesc: "Average and median wait until called, ticket table.",
     adminStatReviews: "Student reviews",
     adminStatReviewsDesc: "1–5★ ratings and comments after service.",
     adminStatLoad: "Service load",
-    adminStatLoadDesc: "Tickets today, peak hours (coming soon).",
+    adminStatLoadDesc: "Registrations and calls by hour for a chosen day.",
     adminStatBooking: "Time bookings",
     adminStatBookingDesc: "Tickets with preferred arrival time.",
     adminStatCount: "events",
@@ -623,7 +707,7 @@ const dict: Record<Lang, Record<string, string>> = {
   kaz: {
     appTagline: "кеңес беру кезегі",
     studentPanel: "Студент панелі",
-    advisorPanel: "Эдвайзер панелі",
+    managerPanel: "Менеджер панелі",
     queueNow: "Ағымдағы кезек",
     inQueue: "Кезекте",
     registrationOpen: "Жазылу ашық",
@@ -647,7 +731,7 @@ const dict: Record<Lang, Record<string, string>> = {
     specialty: "Мамандық",
     course: "Курс",
     department: "Бөлім",
-    advisorLogin: "Эдвайзерге кіру",
+    managerLogin: "Менеджерге кіру",
     login: "Логин",
     password: "Құпия сөз",
     signIn: "Кіру",
@@ -698,7 +782,7 @@ const dict: Record<Lang, Record<string, string>> = {
     historyQueueWait: "Кезекте күту",
     historyServiceTime: "Қызмет уақыты (столда)",
     historyTotalTime: "Тіркелгеннен бері барлығы",
-    historyAdvisor: "Эдвайзер",
+    historyManagerName: "Менеджер",
     historyCategory: "Санат",
     historyStatus: "Күйі",
     historyComment: "Пікір",
@@ -714,14 +798,20 @@ const dict: Record<Lang, Record<string, string>> = {
     adminWindows: "Терезелерді баптау",
     adminWindowsTitle: "Терезелерді баптау",
     adminWindowsHint:
-      "Әр терезеге эдвайзер таңдаңыз. Студент осы эдвайзерге шақырылғанда қолданба дәл осы терезенің схемасын көрсетеді (кезек экранындағы сияқты).",
+      "Әр терезеге менеджер таңдаңыз. Студент осы терезеге шақырылғанда қолданба дәл осы терезенің схемасын көрсетеді (кезек экранындағы сияқты).",
     adminWindowsColWindow: "Терезе",
     adminWindowsColEmployee: "Қызметкер",
     adminWindowsColPreview: "Терезе схемасы",
     adminWindowsEmpty: "— тағайындалмаған —",
     adminWindowsSaving: "Сақталуда…",
     adminStats: "Статистика",
-    adminStaffList: "Қызметкерлер тізімі (эдвайзерлер)",
+    adminStaffList: "Қызметкерлер тізімі (менеджерлер)",
+    adminAddEmployee: "Жаңа қызметкер",
+    adminColFirstName: "Аты",
+    adminColLastName: "Тегі",
+    adminColPassword: "Құпия сөз",
+    adminEmployeeCreate: "Қосу",
+    adminEmployeeCreated: "Қызметкер қосылды",
     adminColName: "Аты",
     adminColLogin: "Логин",
     adminColFaculty: "Фак./бөлім",
@@ -736,6 +826,39 @@ const dict: Record<Lang, Record<string, string>> = {
     adminFaqStatsEmpty: "Әзірге дерек жоқ.",
     adminFaqStatsChartAria: "Кезексіз ЖҚС ашуларының күндік диаграммасы",
     adminFaqStatsAxisHint: "ММ-КК белгілері. Толық күнді бағанның қалауымен көріңіз.",
+    adminFaqAllTime: "Барлық уақыт",
+    adminFaqTotal: "Барлық ашулар",
+    adminFaqColDate: "Күні",
+    adminFaqColCount: "Саны",
+    adminPresetToday: "Бүгін",
+    adminPresetWeek: "7 күн",
+    adminPresetMonth: "Ай",
+    adminFilterVisitStatus: "Визит статусы",
+    adminFilterAny: "Кез келген",
+    adminFilterSchool: "Мектеп",
+    adminFilterSchoolPh: "атаудың бөлігі…",
+    adminFilterStars: "Баға",
+    adminStatsHub: "Толық статистика үшін бөлімді таңдаңыз.",
+    adminWaitTitle: "Шақыруға дейінгі күту",
+    adminWaitHint:
+      "Талон тіркелген күн бойынша: жасалғаннан шақыруға дейінгі минуттар (немесе қабылдау басталғанға дейін). Кесте және CSV.",
+    adminWaitFilterStatus: "Талон статусы",
+    adminWaitMinMin: "Мин. минут",
+    adminWaitMaxMin: "Макс. минут",
+    adminWaitAvgShort: "Орташа, мин",
+    adminWaitMedianShort: "Медиана, мин",
+    adminWaitCountShort: "Талондар",
+    adminWaitEmpty: "Кезеңде күту дерегі бар жазба жоқ.",
+    adminWaitColRegistered: "Тіркелді",
+    adminWaitColCalled: "Шақырылды",
+    adminWaitColServiceStart: "Қабылдау басы",
+    adminWaitColMinutes: "Күту, мин",
+    adminBookingsTitle: "Слот бойынша броньдар",
+    adminBookingsHint:
+      "Келу уақытын көрсеткен студенттер (слот күнінің жергілікті уақыты). Сүзгілер және CSV.",
+    adminBookingsEmpty: "Таңдалған кезеңде бронь жоқ.",
+    adminBookingsColSlot: "Слот (уақыт)",
+    adminBookingsColRegistered: "Кезекке тұрды",
     adminLoad: "Жүктеме",
     adminLoadTitle: "Сағат бойынша жүктеме",
     adminLoadHint:
@@ -761,7 +884,7 @@ const dict: Record<Lang, Record<string, string>> = {
     studentReviewThanks: "Пікіріңізге рахмет!",
     studentCardWait: "Күту",
     studentCardStatus: "Статус",
-    studentGoToAdvisor: "Эдвайзерге жақындаңыз",
+    studentGoToManager: "Менеджерге жақындаңыз",
     waitingUntilBooking: "~{n} мин бронь уақытына дейін",
     waitingQueueEstimate: "~{n} мин (кезек)",
     officeSchemeBtn: "Кабинет схемасы",
@@ -771,11 +894,11 @@ const dict: Record<Lang, Record<string, string>> = {
     officeSchemeWaitingHint: "Кабинеттің жалпы схемасы. Шақырылғаннан кейін терезеңіздің схемасы ашылады.",
     studentQueueShownPartial: "Алғашқы {n} нөмір көрсетілді",
     registrationClosedStudentHint:
-      "Сіздің бағытыңыз бойынша жазылу жабық — эдвайзер осы линияны ашқанша күтіңіз.",
+      "Сіздің бағытыңыз бойынша жазылу жабық — менеджер осы линияны ашқанша күтіңіз.",
     registrationLineNoMatch: "Жол жоқ",
-    registrationLineClosedByAdvisor: "Жабық",
+    registrationLineClosedByManager: "Жабық",
     registrationPickProfileHint:
-      "Алдымен мектеп, мамандық, бөлім және курс таңдаңыз — содан кейін сіздің эдвайзерге жазылу ашық па көрінеді.",
+      "Алдымен мектеп, мамандық, бөлім және курс таңдаңыз — содан кейін сіздің менеджерге жазылу ашық па көрінеді.",
     missedStudentTitle: "Кезекке келмедіңіз",
     missedStudentBody:
       "Себебін айтып берсеңіз (міндетті емес) — қызметті жақсартуға көмектеседі.",
@@ -787,24 +910,24 @@ const dict: Record<Lang, Record<string, string>> = {
     historyReopenService: "Қайта қабылдау",
     historyEditComment: "Пікір",
     historyCommentSave: "Сақтау",
-    advisorReceptionSelfOnly: "Тек өз қабылдау аймағыңыздағы жазылуды жабады, басқа эдвайзерлерді емес.",
+    managerReceptionSelfOnly: "Тек өз қабылдау аймағыңыздағы жазылуды жабады, басқа менеджерлерді емес.",
     studentTicketUpdating: "Жаңартылуда…",
     faqTitle: "Жиі қойылатын сұрақтар",
     faqIntro: "Жауаптар мен сілтемелер. «Кезексіз FAQ» статистикаға енеді.",
-    mapTitle: "Эдвайзинг орталығының схемасы",
+    mapTitle: "Кеңес орталығының схемасы",
     mapBody:
       "Негізгі корпус, 2-қабат. Лифт маңындағы аймақ. A–D терезелері: табло бойынша көрсетілген терезеге барыңыз.",
     chatbotBtn: "Чат-көмекші",
     chatbotHint: "Жаңа қойындыда ашылады",
     chatWidgetTitle: "Чат-көмекші",
-    chatWidgetSubtitle: "Эдвайзинг орталығы",
+    chatWidgetSubtitle: "Кеңес орталығы",
     chatWidgetWelcome:
       "Сәлеметсіз бе! Сұрағыңызды төменге жазыңыз да «Жіберу» басыңыз — Telegram-ботпен сұхбат жаңа қойындыда ашылады, мәтін алмасу буферіне көшіріледі.",
     chatWidgetPlaceholder: "Сұрағыңыз…",
     chatWidgetSend: "Жіберу",
     chatWidgetAfterSend:
       "Telegram жаңа қойындыда ашылды. Қажет болса хабарды өріске қойыңыз (Ctrl+V).",
-    chatWidgetFooter: "Толық жауаптарды эдвайзинг орталығының Telegram-боты береді.",
+    chatWidgetFooter: "Толық жауаптарды кеңес орталығының Telegram-боты береді.",
     school_s0: "Сандық технологиялар мектебі",
     school_s1: "Менеджмент мектебі",
     school_s2: "Экономика және қаржы мектебі",
@@ -851,7 +974,7 @@ const dict: Record<Lang, Record<string, string>> = {
       "Әдепкі — бүгін. Басқа күнді таңдасаңыз, сол күнгі аяқталған қабылдаулар көрінеді (тек сіздің студенттеріңіз).",
     adminVisitsTitle: "Кезең бойынша визиттер тарихы",
     adminVisitsHint:
-      "Қабылдау аяқталған күн бойынша сүзгі. Кесте мен CSV — барлық эдвайзерлер; Excel үшін UTF-8.",
+      "Қабылдау аяқталған күн бойынша сүзгі. Кесте мен CSV — барлық менеджерлер; Excel үшін UTF-8.",
     adminVisitsFrom: "Бастап",
     adminVisitsTo: "Дейін",
     adminVisitsShow: "Көрсету",
@@ -862,7 +985,7 @@ const dict: Record<Lang, Record<string, string>> = {
     adminVisitsColFinished: "Аяқталды",
     adminVisitsColStudent: "Студент",
     adminVisitsColSchool: "Мектеп / мамандық",
-    adminVisitsColAdvisor: "Эдвайзер",
+    adminVisitsColManager: "Менеджер",
     adminVisitsColDesk: "Терезе",
     adminVisitsColStatus: "Күйі",
     adminVisitsColRepeat: "Қайта",
@@ -875,7 +998,7 @@ const dict: Record<Lang, Record<string, string>> = {
       "Пікір жіберілген күн бойынша сүзу (визит күні емес). CSV — «;» және UTF-8 BOM, Excel үшін.",
     adminReviewsColSubmitted: "Пікір күні",
     adminReviewsColStudent: "Студент",
-    adminReviewsColAdvisor: "Қызметкер",
+    adminReviewsColManager: "Менеджер",
     adminReviewsColStars: "Баға",
     adminReviewsColSchool: "Мектеп / мамандық",
     adminReviewsColVisitDone: "Визит аяқталды",
@@ -888,11 +1011,11 @@ const dict: Record<Lang, Record<string, string>> = {
     adminStatExport: "Экспорт және кезең",
     adminStatExportDesc: "Күндер бойынша визиттер кестесі, Excel үшін CSV.",
     adminStatWait: "Күту уақыты",
-    adminStatWaitDesc: "Шақыруға дейінгі орташа күту (жақында).",
+    adminStatWaitDesc: "Шақыруға дейінгі орташа және медиана, талондар кестесі.",
     adminStatReviews: "Студент пікірлері",
     adminStatReviewsDesc: "1–5★ және қабылдаудан кейінгі пікірлер.",
     adminStatLoad: "Жүктеме",
-    adminStatLoadDesc: "Бүгінгі талондар, шиеленіс сағаттары (жақында).",
+    adminStatLoadDesc: "Таңдалған күн үшін сағат бойынша тіркеулер мен шақырулар.",
     adminStatBooking: "Уақыт бойынша бронь",
     adminStatBookingDesc: "Келу уақытын көрсеткен жазбалар.",
     adminStatCount: "оқиға",
@@ -902,11 +1025,11 @@ const dict: Record<Lang, Record<string, string>> = {
   },
 };
 
-function resolveLang(pathname: string, advisorId: number | null, adminId: number | null): Lang {
+function resolveLang(pathname: string, managerId: number | null, adminId: number | null): Lang {
   const isAdmin = pathname.startsWith("/admin");
   if (isAdmin && adminId != null) return getAdminLang(adminId);
-  const isAdvisor = pathname.startsWith("/advisor");
-  if (isAdvisor && advisorId != null) return getAdvisorLang(advisorId);
+  const isManager = pathname.startsWith("/manager");
+  if (isManager && managerId != null) return getManagerLang(managerId);
   return getStudentLang();
 }
 
@@ -916,14 +1039,14 @@ export function getUiLang(): Lang {
 
 export function useI18n() {
   const loc = useLocation();
-  const { advisorId } = useAdvisorContext();
+  const { managerId } = useManagerContext();
   const { adminUser } = useAdminContext();
   const adminId = adminUser != null ? adminUser.id : null;
   const [tick, setTick] = useState(0);
 
   const lang = useMemo(
-    () => resolveLang(loc.pathname, advisorId, adminId),
-    [loc.pathname, advisorId, adminId, tick]
+    () => resolveLang(loc.pathname, managerId, adminId),
+    [loc.pathname, managerId, adminId, tick]
   );
 
   useEffect(() => {
@@ -940,7 +1063,7 @@ export function useI18n() {
   const setLang = (next: Lang) => {
     const isAdmin = loc.pathname.startsWith("/admin");
     if (isAdmin && adminId != null) setAdminLang(adminId, next);
-    else if (loc.pathname.startsWith("/advisor") && advisorId != null) setAdvisorLang(advisorId, next);
+    else if (loc.pathname.startsWith("/manager") && managerId != null) setManagerLang(managerId, next);
     else setStudentLang(next);
   };
 
