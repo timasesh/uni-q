@@ -4,6 +4,7 @@ import session from "express-session";
 import cookieParser from "cookie-parser";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
+import dns from "node:dns";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
@@ -71,6 +72,14 @@ if (!fs.existsSync(dbDir)) {
 }
 const db = new Database(SQLITE_PATH);
 db.pragma("journal_mode = WAL");
+/** Supabase direct host часто отдаёт AAAA; у Render часто нет маршрута до IPv6 → ENETUNREACH. */
+if (process.env.DATABASE_DNS_IPV4_FIRST !== "0" && process.env.DATABASE_URL?.trim()) {
+  try {
+    dns.setDefaultResultOrder("ipv4first");
+  } catch {
+    /* Node < 17 */
+  }
+}
 initPgHistoryPool();
 
 db.exec(`
@@ -759,25 +768,8 @@ app.get("/api/advisors/me/history", requireAdvisor, async (req, res) => {
   const dateQ = parseYmdParam(String(req.query.date || ""));
   const dayFilter = dateQ ?? (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
 
-  let rows: any[];
-  if (isPgHistoryEnabled()) {
-    try {
-      rows = await pgAdvisorVisitRows(advisorId, dayFilter, limit);
-      const ticketStmt = db.prepare(`SELECT status, finished_at FROM tickets WHERE id = ?`);
-      for (const r of rows) {
-        const tid = Number(r.id);
-        const t = ticketStmt.get(tid) as { status?: string; finished_at?: unknown } | undefined;
-        r.reopen_eligible = reopenEligibleForLogRow(r.finished_at, t);
-        r.queue_wait_minutes = minutesBetweenTimestamps(r.created_at, r.started_at);
-        r.desk_service_minutes = minutesBetweenTimestamps(r.started_at, r.finished_at);
-        r.total_minutes = minutesBetweenTimestamps(r.created_at, r.finished_at);
-      }
-    } catch (e) {
-      console.error("[advisor history pg]", e);
-      return res.status(500).json({ error: "Ошибка чтения истории из облака" });
-    }
-  } else {
-    rows = db
+  const advisorHistorySqlite = () =>
+    db
       .prepare(
         `SELECT
          l.id AS log_id,
@@ -818,6 +810,29 @@ app.get("/api/advisors/me/history", requireAdvisor, async (req, res) => {
        LIMIT ?`
       )
       .all(advisorId, dayFilter, limit) as any[];
+
+  let rows: any[];
+  if (isPgHistoryEnabled()) {
+    try {
+      rows = await pgAdvisorVisitRows(advisorId, dayFilter, limit);
+      const ticketStmt = db.prepare(`SELECT status, finished_at FROM tickets WHERE id = ?`);
+      for (const r of rows) {
+        const tid = Number(r.id);
+        const t = ticketStmt.get(tid) as { status?: string; finished_at?: unknown } | undefined;
+        r.reopen_eligible = reopenEligibleForLogRow(r.finished_at, t);
+        r.queue_wait_minutes = minutesBetweenTimestamps(r.created_at, r.started_at);
+        r.desk_service_minutes = minutesBetweenTimestamps(r.started_at, r.finished_at);
+        r.total_minutes = minutesBetweenTimestamps(r.created_at, r.finished_at);
+      }
+    } catch (e) {
+      console.error("[advisor history pg]", e);
+      console.warn(
+        "[advisor history] ответ из SQLite: PostgreSQL недоступен. На Render задайте pooler Supabase (IPv4) или см. DEPLOY-RENDER.md."
+      );
+      rows = advisorHistorySqlite();
+    }
+  } else {
+    rows = advisorHistorySqlite();
   }
 
   res.json({
@@ -1352,16 +1367,8 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
   if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
   const format = String(req.query.format || "json").toLowerCase();
 
-  let rows: any[];
-  if (isPgHistoryEnabled()) {
-    try {
-      rows = await pgAdminVisitsBetween(from, to);
-    } catch (e) {
-      console.error("[admin visits pg]", e);
-      return res.status(500).json({ error: "Ошибка чтения истории из облака (PostgreSQL)" });
-    }
-  } else {
-    rows = db
+  const adminVisitsSqlite = () =>
+    db
       .prepare(
         `SELECT
          l.id AS log_id,
@@ -1388,6 +1395,20 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
        ORDER BY l.finished_at DESC, l.id DESC`
       )
       .all(from, to) as any[];
+
+  let rows: any[];
+  if (isPgHistoryEnabled()) {
+    try {
+      rows = await pgAdminVisitsBetween(from, to);
+    } catch (e) {
+      console.error("[admin visits pg]", e);
+      console.warn(
+        "[admin visits] ответ из SQLite: PostgreSQL недоступен. На Render используйте pooler Supabase (IPv4), см. DEPLOY-RENDER.md."
+      );
+      rows = adminVisitsSqlite();
+    }
+  } else {
+    rows = adminVisitsSqlite();
   }
 
   if (format === "csv") {

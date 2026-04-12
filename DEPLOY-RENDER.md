@@ -15,7 +15,18 @@
    `supabase/migrations/20260412120000_initial.sql`  
    вставьте в редактор и нажмите **Run**.
 5. (Опционально) **Table Editor** — проверьте, что таблицы созданы.
-6. Строку подключения: **Project Settings → Database → Connection string** (режим **Session** или **Transaction** для pooler). Её можно передать в приложение как **`DATABASE_URL`**: тогда **`ticket_visit_log`** пишется и читается из Postgres (история в админке и у эдвайзера), а очередь и остальное остаются в SQLite на Render.
+6. Строку подключения: **Project Settings → Database** (или **Connect**) → **Connection string**. Для **Render** почти всегда нужен **Session pooler** (порт **6543**, хост `*.pooler.supabase.com`), а не прямой **Database** на **5432** — см. ниже.
+7. Передайте строку в **`DATABASE_URL`**: тогда **`ticket_visit_log`** пишется и читается из Postgres (история в админке и у эдвайзера), очередь и остальное остаются в SQLite на Render.
+
+### Render и ошибка `ENETUNREACH` / IPv6
+
+Прямой хост вида `db.xxxxx.supabase.co` на порту **5432** часто резолвится в **IPv6**. У платформы **Render** до такого адреса часто **нет маршрута** — в логах: `connect ENETUNREACH` и адрес вида `2406:…`.
+
+**Надёжное решение:** в Supabase скопируйте URI **Session mode** (pooler), порт **6543**, пользователь обычно `postgres.<ref>`, пароль тот же, что у БД. Подставьте в `DATABASE_URL` на Render и передеплойте.
+
+В приложении при заданном `DATABASE_URL` вызывается **`dns.setDefaultResultOrder("ipv4first")`**, чтобы при наличии и A, и AAAA-записей сначала использовался IPv4. Если у хоста только AAAA, без pooler это не поможет — нужен pooler или опция Supabase **IPv4** (если включена в проекте).
+
+При недоступности Postgres история **по-прежнему в SQLite** на сервере; API отдаёт её из SQLite и пишет предупреждение в лог, чтобы интерфейс не ломался.
 
 ---
 
@@ -48,6 +59,7 @@
 | `DATABASE_URL` | нет | URI PostgreSQL Supabase. Включает запись и чтение **`ticket_visit_log`** в облаке (история визитов). Остальные таблицы по-прежнему в SQLite. |
 | `UNIQ_REPORT_TZ` | нет | IANA-таймзона для фильтра дат по `finished_at` в Postgres (по умолчанию `UTC`). |
 | `DATABASE_SSL` | нет | `0` — отключить SSL к Postgres (обычно не нужно для Supabase). |
+| `DATABASE_DNS_IPV4_FIRST` | нет | `0` — не вызывать `dns.setDefaultResultOrder("ipv4first")` (по умолчанию включено при `DATABASE_URL`). |
 
 После изменения `WEB_ORIGIN` сделайте **Manual Deploy → Clear build cache & deploy** при необходимости.
 
