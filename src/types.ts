@@ -1,0 +1,56 @@
+export type TicketStatus = "WAITING" | "CALLED" | "IN_SERVICE" | "MISSED" | "DONE" | "CANCELLED";
+
+export type Ticket = {
+  id: number;
+  queue_number: number;
+  formatted_number?: string;
+  status: TicketStatus;
+  school?: string | null;
+  specialty?: string | null;
+  specialty_code?: string | null;
+  language_section?: string | null;
+  course?: string | null;
+  advisor_id?: number | null;
+  /** Для WAITING: единственный эдвайзер, которому показывают этот талон (детерминированный выбор при пересечении зон). */
+  route_advisor_id?: number | null;
+  advisor_name?: string | null;
+  advisor_desk?: string | null;
+  advisor_faculty?: string | null;
+  advisor_department?: string | null;
+  comment?: string | null;
+  case_type?: "RETAKE" | "PAYMENT" | "DISCIPLINE" | "OTHER" | null;
+  estimated_time?: number | null;
+  preferred_slot_at?: string | null;
+  has_review?: number;
+  /** Причина пропуска (студент); null — форма ещё не заполнена */
+  missed_student_note?: string | null;
+};
+
+export type QueueSession = {
+  id: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type LiveQueue = {
+  session: QueueSession;
+  tickets: Ticket[];
+};
+
+export type Advisor = {
+  id: number;
+  name: string;
+  faculty?: string | null;
+  department?: string | null;
+  desk_number?: string | null;
+  assigned_schools_json?: string | null;
+  assigned_language?: string | null;
+  assigned_languages_json?: string | null;
+  assigned_courses_json?: string | null;
+  assigned_specialties_json?: string | null;
+  /** Суммарное отработанное время на сервере (мс), см. advisor_work_totals */
+  total_work_ms?: number;
+  /** Запись в свою зону приёма (1 = открыта) */
+  reception_open?: number | boolean;
+};
+

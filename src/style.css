@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(180deg, #f5f3ff 0%, #fafbff 35%, #ffffff 100%);
+  color: #1e1b4b;
+}
+
+.dark body {
+  background: radial-gradient(1100px 560px at 10% 0%, rgba(56, 189, 248, 0.18), transparent 55%),
+    radial-gradient(900px 520px at 90% 20%, rgba(59, 130, 246, 0.16), transparent 55%),
+    linear-gradient(180deg, #020617 0%, #0f172a 55%, #020617 100%);
+  color: #bae6fd;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.22);
+}
+
+@layer components {
+  .ui-shell {
+    @apply mx-auto max-w-6xl px-4 py-6;
+  }
+
+  .ui-title {
+    @apply text-xl font-black tracking-tight text-violet-950 dark:text-sky-100;
+  }
+
+  .ui-muted {
+    @apply text-sm font-semibold text-violet-800/90 dark:text-sky-300;
+  }
+
+  /* Белая карточка, мягкая тень в фиолетово-синей гамме — без серых блоков */
+  .ui-card {
+    @apply rounded-2xl border border-violet-100/90 bg-white p-6 shadow-[0_4px_24px_-8px_rgba(91,33,182,0.12),0_8px_32px_-12px_rgba(37,99,235,0.08)];
+    @apply dark:border-sky-500/20 dark:bg-blue-950/55;
+  }
+
+  .ui-subcard {
+    @apply rounded-xl border border-violet-100 bg-white p-4 shadow-sm;
+    @apply dark:border-sky-500/15 dark:bg-blue-950/40;
+  }
+
+  .ui-input {
+    @apply w-full rounded-xl border border-violet-100 bg-white px-4 py-3 text-sm font-semibold text-violet-950 shadow-sm outline-none;
+    @apply focus:border-violet-400 focus:ring-4 focus:ring-violet-100;
+    @apply dark:border-sky-500/20 dark:bg-blue-950/50 dark:text-sky-100 dark:focus:ring-sky-500/20;
+  }
+
+  /* Яркий синий как в референсе */
+  .ui-btn-primary {
+    @apply rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 text-sm font-black text-white shadow-md shadow-blue-500/25 transition;
+    @apply hover:from-blue-700 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ui-btn-ghost {
+    @apply rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-extrabold text-violet-900 shadow-sm transition;
+    @apply hover:border-violet-400 hover:bg-violet-50;
+    @apply dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/25;
+  }
+
+  .ui-kicker {
+    @apply text-[11px] font-black uppercase tracking-[0.16em] text-violet-600 dark:text-sky-300;
+  }
+
+  /* Градиентные KPI как в админ-примере */
+  .ui-stat-card {
+    @apply relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-blue-600 p-6 text-white shadow-lg shadow-violet-500/25;
+  }
+
+  .ui-stat-card-muted {
+    @apply text-sm font-semibold text-white/85;
+  }
+
+  .ui-stat-card-value {
+    @apply mt-1 text-3xl font-black tabular-nums tracking-tight;
+  }
+}

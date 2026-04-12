@@ -1,0 +1,21 @@
+# Blueprint Render: https://render.com/docs/blueprint-spec
+# После деплоя в Dashboard → Environment добавьте WEB_ORIGIN = точный URL (https://ваш-сервис.onrender.com).
+# Постоянный диск для SQLite: Dashboard → Disks → mount (например /data), затем SQLITE_PATH=/data/uni-q.sqlite
+services:
+  - type: web
+    name: uni-q
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SQLITE_PATH
+        value: ./data/uni-q.sqlite
+      - key: TRUST_PROXY
+        value: "1"
+      - key: WEB_ORIGIN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
