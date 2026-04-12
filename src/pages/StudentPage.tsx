@@ -9,6 +9,7 @@ import { SCHOOL_ENTRIES, schoolApiNameById, specialtiesForSchool } from "../scho
 import { availableSlotLabelsForToday, isoFromLocalTodayHM } from "../lib/bookingSlots";
 import { useI18n } from "../i18n";
 import { parseDeskWindowNumber, schemeImagePathForWindow, schemeImagePathGeneral } from "../lib/deskWindow";
+import { parseBackendDateTime } from "../lib/backendDateTime";
 
 type StudentForm = {
   firstName: string;
@@ -249,8 +250,8 @@ export default function StudentPage() {
     if (!myTicket || myTicket.status !== "WAITING") return "—";
     const slotRaw = myTicket.preferred_slot_at;
     if (slotRaw != null && String(slotRaw).trim() !== "") {
-      const d = new Date(String(slotRaw));
-      if (!Number.isNaN(d.getTime())) {
+      const d = parseBackendDateTime(String(slotRaw));
+      if (d) {
         const ms = d.getTime() - Date.now();
         if (ms > 0) {
           const mins = Math.max(1, Math.ceil(ms / 60_000));
@@ -543,7 +544,7 @@ export default function StudentPage() {
               <div className="border-t border-violet-100 bg-indigo-50/60 px-5 py-3 dark:border-white/10 dark:bg-indigo-950/25">
                 <div className="text-[10px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-300">{t("preferredSlot")}</div>
                 <div className="mt-0.5 text-sm font-black text-indigo-950 dark:text-indigo-100">
-                  {new Date(myTicket.preferred_slot_at).toLocaleString()}
+                  {parseBackendDateTime(String(myTicket.preferred_slot_at))?.toLocaleString() ?? "—"}
                 </div>
               </div>
             )}

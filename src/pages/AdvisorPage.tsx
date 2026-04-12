@@ -11,6 +11,7 @@ import { ticketMatchesAdvisor } from "../lib/advisorScope";
 import { bookingCallableNow } from "../lib/bookingCallable";
 import { hydrateManagerWorkedFromServer, syncManagerWorkTotalToServer } from "../lib/advisorWorkSync";
 import { formatAdvisorReceptionSummary } from "../lib/formatAdvisorReceptionSummary";
+import { parseBackendDateTime } from "../lib/backendDateTime";
 
 type Props = {
   managerDark: boolean;
@@ -458,9 +459,8 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   }
 
   function timeHHMM(dt: string | null | undefined): string {
-    if (!dt) return "—";
-    const d = new Date(dt);
-    if (Number.isNaN(d.getTime())) return "—";
+    const d = parseBackendDateTime(dt ?? undefined);
+    if (!d) return "—";
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 

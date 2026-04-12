@@ -17,6 +17,7 @@ import {
   pgAdvisorVisitRows,
   reportTzLabel,
 } from "./server/pgHistory.js";
+import { backendInstantMs } from "./src/lib/backendDateTime.ts";
 
 type TicketStatus = "WAITING" | "CALLED" | "IN_SERVICE" | "MISSED" | "DONE" | "CANCELLED";
 
@@ -373,10 +374,9 @@ function insertVisitLogFromTicket(t: any, isRepeat: number) {
 }
 
 function minutesBetweenTimestamps(a: unknown, b: unknown): number | null {
-  if (a == null || b == null) return null;
-  const t0 = new Date(String(a)).getTime();
-  const t1 = new Date(String(b)).getTime();
-  if (Number.isNaN(t0) || Number.isNaN(t1)) return null;
+  const t0 = backendInstantMs(a);
+  const t1 = backendInstantMs(b);
+  if (t0 == null || t1 == null) return null;
   return Math.round((t1 - t0) / 60000);
 }
 
@@ -387,8 +387,8 @@ function reopenEligibleForLogRow(logFinishedAt: unknown, ticketRow: { status?: s
   const lf = String(logFinishedAt ?? "");
   const tf = String(ticketRow.finished_at ?? "");
   if (!lf || !tf || lf !== tf) return 0;
-  const fin = new Date(tf).getTime();
-  if (Number.isNaN(fin)) return 0;
+  const fin = backendInstantMs(tf);
+  if (fin == null) return 0;
   const mins = (Date.now() - fin) / (60 * 1000);
   return mins <= 60 && mins >= 0 ? 1 : 0;
 }
@@ -526,9 +526,9 @@ function bookingCallableNow(preferred_slot_at: unknown, now: Date = new Date()):
   if (preferred_slot_at == null) return true;
   const raw = String(preferred_slot_at).trim();
   if (raw === "") return true;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return false;
-  return d.getTime() <= now.getTime();
+  const t = backendInstantMs(raw);
+  if (t == null) return false;
+  return t <= now.getTime();
 }
 
 function computeEstimatedMinutes(newTicket: any): number {
