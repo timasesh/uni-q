@@ -1356,7 +1356,8 @@ if (NODE_ENV === "production") {
   const dist = path.join(process.cwd(), "dist");
   if (fs.existsSync(dist)) {
     app.use(express.static(dist));
-    app.get("*", (req, res, next) => {
+    // Express 5 / path-to-regexp: нельзя использовать app.get('*', …) — падает с PathError.
+    app.use((req, res, next) => {
       if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/socket.io")) return next();
       res.sendFile(path.join(dist, "index.html"));
     });
