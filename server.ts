@@ -8,6 +8,14 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import fs from "fs";
+import {
+  fireVisitLogInsertPg,
+  initPgHistoryPool,
+  isPgHistoryEnabled,
+  pgAdminVisitsBetween,
+  pgAdvisorVisitRows,
+  reportTzLabel,
+} from "./server/pgHistory.js";
 
 type TicketStatus = "WAITING" | "CALLED" | "IN_SERVICE" | "MISSED" | "DONE" | "CANCELLED";
 
@@ -22,7 +30,9 @@ const PORT = Number(process.env.PORT || 5174);
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
 const NODE_ENV = process.env.NODE_ENV || "development";
-const SQLITE_PATH = process.env.SQLITE_PATH || "uni-q.sqlite";
+/** Все данные приложения — один файл SQLite (локально: папка `data/` в корне проекта на ноутбуке). */
+const SQLITE_PATH =
+  process.env.SQLITE_PATH || path.join(process.cwd(), "data", "uni-q.sqlite");
 
 const app = express();
 if (process.env.TRUST_PROXY === "1" || NODE_ENV === "production") {
@@ -54,13 +64,14 @@ app.use(
   })
 );
 
-// --- DB (файл на диске; на Render задайте SQLITE_PATH, см. DEPLOY-RENDER.md)
+// --- DB (файл на диске; при необходимости SQLITE_PATH в .env; на Render см. DEPLOY-RENDER.md)
 const dbDir = path.dirname(path.resolve(SQLITE_PATH));
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 const db = new Database(SQLITE_PATH);
 db.pragma("journal_mode = WAL");
+initPgHistoryPool();
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS queue_session (
@@ -343,6 +354,28 @@ function insertVisitLogFromTicket(t: any, isRepeat: number) {
     t.case_type ?? null,
     isRepeat ? 1 : 0
   );
+  fireVisitLogInsertPg(t as Record<string, unknown>, isRepeat);
+}
+
+function minutesBetweenTimestamps(a: unknown, b: unknown): number | null {
+  if (a == null || b == null) return null;
+  const t0 = new Date(String(a)).getTime();
+  const t1 = new Date(String(b)).getTime();
+  if (Number.isNaN(t0) || Number.isNaN(t1)) return null;
+  return Math.round((t1 - t0) / 60000);
+}
+
+function reopenEligibleForLogRow(logFinishedAt: unknown, ticketRow: { status?: string; finished_at?: unknown } | undefined): number {
+  if (!ticketRow) return 0;
+  const st = String(ticketRow.status || "");
+  if (!["DONE", "MISSED"].includes(st)) return 0;
+  const lf = String(logFinishedAt ?? "");
+  const tf = String(ticketRow.finished_at ?? "");
+  if (!lf || !tf || lf !== tf) return 0;
+  const fin = new Date(tf).getTime();
+  if (Number.isNaN(fin)) return 0;
+  const mins = (Date.now() - fin) / (60 * 1000);
+  return mins <= 60 && mins >= 0 ? 1 : 0;
 }
 
 function parseYmdParam(s: string): string | null {
@@ -356,21 +389,6 @@ function parseCourse(course: string | null | undefined): number | null {
   if (!m) return null;
   const n = Number(m[0]);
   return Number.isFinite(n) ? n : null;
-}
-
-function advisorScope(advisorId: number): AdvisorScope {
-  const row = db
-    .prepare(
-      `SELECT assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json
-       FROM advisors WHERE id = ?`
-    )
-    .get(advisorId) as Partial<AdvisorScope> | undefined;
-  return {
-    assigned_schools_json: row?.assigned_schools_json ?? "[]",
-    assigned_languages_json: row?.assigned_languages_json ?? null,
-    assigned_courses_json: row?.assigned_courses_json ?? "[1,2,3,4]",
-    assigned_specialties_json: row?.assigned_specialties_json ?? null,
-  };
 }
 
 /** Список эдвайзеров для расчёта маршрутизации талонов (кэш на один снимок очереди). */
@@ -734,16 +752,34 @@ app.patch("/api/advisors/me/work-total", requireAdvisor, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/advisors/me/history", requireAdvisor, (req, res) => {
+app.get("/api/advisors/me/history", requireAdvisor, async (req, res) => {
   const advisorId = (req.session as any).advisorId as number;
   const limitRaw = Number((req.query.limit as string) || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;
   const dateQ = parseYmdParam(String(req.query.date || ""));
   const dayFilter = dateQ ?? (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
 
-  const rows = db
-    .prepare(
-      `SELECT
+  let rows: any[];
+  if (isPgHistoryEnabled()) {
+    try {
+      rows = await pgAdvisorVisitRows(advisorId, dayFilter, limit);
+      const ticketStmt = db.prepare(`SELECT status, finished_at FROM tickets WHERE id = ?`);
+      for (const r of rows) {
+        const tid = Number(r.id);
+        const t = ticketStmt.get(tid) as { status?: string; finished_at?: unknown } | undefined;
+        r.reopen_eligible = reopenEligibleForLogRow(r.finished_at, t);
+        r.queue_wait_minutes = minutesBetweenTimestamps(r.created_at, r.started_at);
+        r.desk_service_minutes = minutesBetweenTimestamps(r.started_at, r.finished_at);
+        r.total_minutes = minutesBetweenTimestamps(r.created_at, r.finished_at);
+      }
+    } catch (e) {
+      console.error("[advisor history pg]", e);
+      return res.status(500).json({ error: "Ошибка чтения истории из облака" });
+    }
+  } else {
+    rows = db
+      .prepare(
+        `SELECT
          l.id AS log_id,
          l.ticket_id AS id,
          l.queue_number,
@@ -780,8 +816,9 @@ app.get("/api/advisors/me/history", requireAdvisor, (req, res) => {
          AND date(l.finished_at, 'localtime') = ?
        ORDER BY l.finished_at DESC, l.id DESC
        LIMIT ?`
-    )
-    .all(advisorId, dayFilter, limit) as any[];
+      )
+      .all(advisorId, dayFilter, limit) as any[];
+  }
 
   res.json({
     rows: rows.map((r) => ({
@@ -1308,16 +1345,25 @@ function csvCell(v: unknown): string {
 }
 
 /** История завершённых визитов за период (все эдвайзеры). format=csv — выгрузка для Excel. */
-app.get("/api/admin/visits/history", requireAdmin, (req, res) => {
+app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
   const from = parseYmdParam(String(req.query.from || ""));
   const to = parseYmdParam(String(req.query.to || ""));
   if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
   if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
   const format = String(req.query.format || "json").toLowerCase();
 
-  const rows = db
-    .prepare(
-      `SELECT
+  let rows: any[];
+  if (isPgHistoryEnabled()) {
+    try {
+      rows = await pgAdminVisitsBetween(from, to);
+    } catch (e) {
+      console.error("[admin visits pg]", e);
+      return res.status(500).json({ error: "Ошибка чтения истории из облака (PostgreSQL)" });
+    }
+  } else {
+    rows = db
+      .prepare(
+        `SELECT
          l.id AS log_id,
          l.ticket_id,
          l.queue_number,
@@ -1340,8 +1386,9 @@ app.get("/api/admin/visits/history", requireAdmin, (req, res) => {
        FROM ticket_visit_log l
        WHERE date(l.finished_at, 'localtime') >= ? AND date(l.finished_at, 'localtime') <= ?
        ORDER BY l.finished_at DESC, l.id DESC`
-    )
-    .all(from, to) as any[];
+      )
+      .all(from, to) as any[];
+  }
 
   if (format === "csv") {
     const header =
@@ -1471,6 +1518,10 @@ if (NODE_ENV === "production") {
 
 const onListen = () => {
   console.log(`uni-q server listening on port ${PORT} (${NODE_ENV})`);
+  console.log(`SQLite (очередь и талоны): ${path.resolve(SQLITE_PATH)}`);
+  if (isPgHistoryEnabled()) {
+    console.log(`PostgreSQL (история визитов ticket_visit_log): ON, UNIQ_REPORT_TZ=${reportTzLabel()}`);
+  }
 };
 if (NODE_ENV === "production") {
   httpServer.listen(PORT, "0.0.0.0", onListen);

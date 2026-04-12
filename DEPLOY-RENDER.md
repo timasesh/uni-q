@@ -2,7 +2,7 @@
 
 Текущая версия приложения хранит данные в **SQLite** (файл). Фронтенд собирается в `dist/`, в production один процесс Node отдаёт **API + статику** и WebSocket очереди.
 
-В репозитории есть **SQL-миграция для PostgreSQL** в `supabase/migrations/` — её можно выполнить в Supabase (отдельная БД для отчётов, бэкапов или будущей замены драйвера в коде).
+В репозитории есть **SQL-миграция для PostgreSQL** в `supabase/migrations/` — выполните её в Supabase перед использованием `DATABASE_URL` для истории визитов (или для BI и копий).
 
 ---
 
@@ -15,7 +15,7 @@
    `supabase/migrations/20260412120000_initial.sql`  
    вставьте в редактор и нажмите **Run**.
 5. (Опционально) **Table Editor** — проверьте, что таблицы созданы.
-6. Строку подключения пригодится позже: **Project Settings → Database → Connection string** (режим **Session** или **Transaction** для pooler). Сейчас приложение **не читает** `DATABASE_URL`; это заготовка под миграцию на `pg` или ETL.
+6. Строку подключения: **Project Settings → Database → Connection string** (режим **Session** или **Transaction** для pooler). Её можно передать в приложение как **`DATABASE_URL`**: тогда **`ticket_visit_log`** пишется и читается из Postgres (история в админке и у эдвайзера), а очередь и остальное остаются в SQLite на Render.
 
 ---
 
@@ -45,6 +45,9 @@
 | `SQLITE_PATH` | желательно | Путь к файлу БД. По умолчанию в Blueprint: `./data/uni-q.sqlite` (каталог `data/` создаётся при старте). Для **постоянного** хранилища подключите **Disk** в Render и, например, `SQLITE_PATH=/data/uni-q.sqlite`. |
 | `TRUST_PROXY` | да за HTTPS | `1` — чтобы за прокси Render корректно работали secure-cookie и IP (уже в `render.yaml`). |
 | `SESSION_COOKIE_SECURE` | редко | `0` только для нестандартной отладки за прокси без HTTPS. |
+| `DATABASE_URL` | нет | URI PostgreSQL Supabase. Включает запись и чтение **`ticket_visit_log`** в облаке (история визитов). Остальные таблицы по-прежнему в SQLite. |
+| `UNIQ_REPORT_TZ` | нет | IANA-таймзона для фильтра дат по `finished_at` в Postgres (по умолчанию `UTC`). |
+| `DATABASE_SSL` | нет | `0` — отключить SSL к Postgres (обычно не нужно для Supabase). |
 
 После изменения `WEB_ORIGIN` сделайте **Manual Deploy → Clear build cache & deploy** при необходимости.
 
@@ -75,6 +78,7 @@ npm run build
 set NODE_ENV=production
 set WEB_ORIGIN=http://localhost:5174
 set PORT=5174
+REM по умолчанию SQLite: папка data\ в корне проекта (см. SQLITE_PATH в .env.example)
 npm start
 ```
 
@@ -84,7 +88,8 @@ npm start
 
 ## Связка Render + Supabase в одном слове
 
-- **Сейчас:** приложение = **SQLite** + Render.  
-- **Supabase:** выполните SQL из `supabase/migrations/` — получите **ту же схему** в Postgres (удобно для BI, копий, будущей миграции кода на `DATABASE_URL`).
+- **По умолчанию:** приложение = **SQLite** + Render.  
+- **С `DATABASE_URL`:** история завершённых визитов (**`ticket_visit_log`**) дублируется в Supabase Postgres и отображается из неё; очередь, талоны (кроме деталей для «reopen» из SQLite), отзывы — в SQLite.  
+- Выполните SQL из `supabase/migrations/` в Supabase, чтобы таблицы совпадали со схемой.
 
-Когда понадобится хранить живые данные только в Supabase, потребуется заменить слой `better-sqlite3` в `server.ts` на клиент `pg` и адаптировать SQL (функции дат, `RETURNING`, транзакции). Структура таблиц для этого уже зафиксирована в миграции.
+Полный перенос всех данных только в Supabase потребует заменить слой `better-sqlite3` в `server.ts` на `pg` для остальных таблиц. Структура для этого зафиксирована в миграции.

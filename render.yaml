@@ -1,6 +1,7 @@
 # Blueprint Render: https://render.com/docs/blueprint-spec
 # После деплоя в Dashboard → Environment добавьте WEB_ORIGIN = точный URL (https://ваш-сервис.onrender.com).
 # Постоянный диск для SQLite: Dashboard → Disks → mount (например /data), затем SQLITE_PATH=/data/uni-q.sqlite
+# Опционально: DATABASE_URL = строка Postgres из Supabase (история визитов в облаке), см. DEPLOY-RENDER.md и .env.example
 services:
   - type: web
     name: uni-q

@@ -9,6 +9,11 @@ lerna-debug.log*
 
 node_modules
 dist
+
+# Локальная SQLite (данные на ноутбуке; не коммитить)
+/data/*.sqlite
+/data/*.sqlite-wal
+/data/*.sqlite-shm
 dist-ssr
 *.local
 
