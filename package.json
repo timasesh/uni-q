@@ -12,8 +12,7 @@
     "dev:web": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "tsx server.ts",
-    "create-admin": "npx tsx scripts/create-admin.ts"
+    "start": "tsx server.ts"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",

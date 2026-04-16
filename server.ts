@@ -278,14 +278,24 @@ function ensureSeed() {
 ensureSeed();
 
 function ensureAdminSeed() {
-  const has = db.prepare("SELECT 1 as ok FROM admin_users WHERE login = ?").get("timaadmin") as { ok: 1 } | undefined;
-  if (!has) {
-    db.prepare(`INSERT INTO admin_users (login, password_hash, name) VALUES (?, ?, ?)`).run(
-      "timaadmin",
-      bcrypt.hashSync("admin2010", 10),
-      "Администратор"
-    );
-  }
+  const ensureAdmin = (login: string, password: string, name: string) => {
+    const has = db
+      .prepare("SELECT 1 as ok FROM admin_users WHERE login = ?")
+      .get(login) as { ok: 1 } | undefined;
+    if (!has) {
+      db.prepare(`INSERT INTO admin_users (login, password_hash, name) VALUES (?, ?, ?)`).run(
+        login,
+        bcrypt.hashSync(password, 10),
+        name
+      );
+    }
+  };
+
+  // Тестовый админ, оставить на всякий случай.
+  ensureAdmin("timaadmin", "admin2010", "Администратор");
+
+  // Админ от вас (логин = email)
+  ensureAdmin("S.Mussa@almau.edu.kz", "admin2026", "Мұса Самал");
 }
 ensureAdminSeed();
 migrateDb();
