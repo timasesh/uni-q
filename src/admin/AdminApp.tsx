@@ -6,9 +6,8 @@ import {
   useLocation,
   useNavigate,
   Outlet,
-  useOutletContext,
 } from "react-router-dom";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   LogOut,
   BarChart3,
@@ -22,8 +21,7 @@ import {
   CalendarClock,
   LayoutGrid,
   LineChart,
-  Moon,
-  Sun,
+  Trash2,
   X,
 } from "lucide-react";
 import { fetchJSON, readJSON } from "../api";
@@ -33,8 +31,6 @@ import { useManagerContext } from "../context/ManagerContext";
 import { cn } from "../lib/cn";
 import { SCHEME_WINDOW_COUNT, parseDeskWindowNumber, schemeImagePathForWindow } from "../lib/deskWindow";
 import { AppLogo } from "../lib/brand";
-
-export type AdminOutletCtx = { adminDark: boolean; setAdminDark: (v: boolean) => void };
 
 function formatHm(ms: number) {
   const s = Math.floor(Math.max(0, ms) / 1000);
@@ -223,6 +219,7 @@ export function AdminEmployees() {
   const [createErr, setCreateErr] = useState("");
   const [createOk, setCreateOk] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteBusyId, setDeleteBusyId] = useState<number | null>(null);
 
   const load = async () => {
     const res = await fetchJSON("/api/admin/managers");
@@ -283,6 +280,21 @@ export function AdminEmployees() {
     setCreateBusy(false);
     setCreateOpen(false);
     await load();
+  };
+
+  const removeEmployee = async (id: number) => {
+    if (!window.confirm(t("adminDeleteEmployeeConfirm"))) return;
+    setDeleteBusyId(id);
+    setErr("");
+    const res = await fetchJSON(`/api/admin/managers/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const j = (await readJSON<{ error?: string }>(res).catch(() => ({}))) as { error?: string };
+      setErr(j.error || t("adminDeleteEmployeeError"));
+      setDeleteBusyId(null);
+      return;
+    }
+    await load();
+    setDeleteBusyId(null);
   };
 
   return (
@@ -393,7 +405,7 @@ export function AdminEmployees() {
         <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-300">—</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[900px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-violet-100 text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:border-white/10 dark:text-violet-300">
                 <th className="py-3 pr-3">ID</th>
@@ -403,6 +415,7 @@ export function AdminEmployees() {
                 <th className="py-3 pr-3">{t("adminColDesk")}</th>
                 <th className="py-3 pr-3">{t("adminColReception")}</th>
                 <th className="py-3">{t("adminColWorkedToday")}</th>
+                <th className="py-3 text-right">{t("adminColActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -423,6 +436,17 @@ export function AdminEmployees() {
                   </td>
                   <td className="py-3 font-mono tabular-nums font-bold text-emerald-700 dark:text-emerald-400">
                     {formatHm(Number(r.work_ms_today) || 0)}
+                  </td>
+                  <td className="py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void removeEmployee(r.id)}
+                      disabled={deleteBusyId === r.id}
+                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      {deleteBusyId === r.id ? t("loading") : t("adminDeleteEmployee")}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -2105,14 +2129,51 @@ function AdminStats() {
   );
 }
 
-function AdminSettingsInner({ adminDark, setAdminDark }: AdminOutletCtx) {
+function AdminSettingsInner() {
   const { t, lang, setLang } = useI18n();
   const { adminUser } = useAdminContext();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
+  const [nextPassword2, setNextPassword2] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState("");
+  const [passwordErr, setPasswordErr] = useState("");
   const langs: { id: Lang; label: string }[] = [
     { id: "rus", label: "Русский" },
     { id: "eng", label: "English" },
     { id: "kaz", label: "Қазақша" },
   ];
+
+  const submitAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordErr("");
+    setPasswordMsg("");
+    if (!currentPassword || !nextPassword) {
+      setPasswordErr(t("adminPasswordFillAll"));
+      return;
+    }
+    if (nextPassword !== nextPassword2) {
+      setPasswordErr(t("adminPasswordMismatch"));
+      return;
+    }
+    setPasswordBusy(true);
+    const res = await fetchJSON("/api/admin/me/password", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword: nextPassword }),
+    });
+    const j = (await readJSON<{ error?: string }>(res).catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      setPasswordErr(j.error || t("adminPasswordChangeError"));
+      setPasswordBusy(false);
+      return;
+    }
+    setCurrentPassword("");
+    setNextPassword("");
+    setNextPassword2("");
+    setPasswordMsg(t("adminPasswordChanged"));
+    setPasswordBusy(false);
+  };
 
   return (
     <div className="max-w-xl rounded-2xl border border-violet-200/80 bg-white p-7 shadow-lg shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 dark:shadow-black/40">
@@ -2141,43 +2202,47 @@ function AdminSettingsInner({ adminDark, setAdminDark }: AdminOutletCtx) {
           </div>
           <p className="mt-2 text-[11px] font-medium text-violet-600 dark:text-violet-400">{t("langUiHint")}</p>
         </div>
-        <div
-          className={cn(
-            "flex items-center justify-between gap-4 rounded-2xl border px-5 py-4",
-            adminDark
-              ? "border-indigo-400/40 bg-slate-900 ring-1 ring-indigo-500/25"
-              : "border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50/90"
-          )}
+        <form
+          onSubmit={(e) => void submitAdminPassword(e)}
+          className="space-y-3 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50/90 px-5 py-4"
         >
-          <div>
-            <div className={cn("text-sm font-extrabold", adminDark ? "text-white" : "text-violet-950")}>
-              {t("darkTheme")}
-            </div>
-            <div className={cn("mt-0.5 text-xs font-semibold", adminDark ? "text-indigo-200" : "text-violet-700")}>
-              {t("darkThemeDesc")}
-            </div>
+          <div className="text-sm font-extrabold text-violet-950">{t("adminChangePasswordTitle")}</div>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4"
+            placeholder={t("adminCurrentPassword")}
+          />
+          <input
+            type="password"
+            value={nextPassword}
+            onChange={(e) => setNextPassword(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4"
+            placeholder={t("adminNewPassword")}
+          />
+          <input
+            type="password"
+            value={nextPassword2}
+            onChange={(e) => setNextPassword2(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4"
+            placeholder={t("adminNewPasswordRepeat")}
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={passwordBusy}
+              className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-black text-white"
+            >
+              {passwordBusy ? t("loading") : t("adminPasswordSave")}
+            </button>
+            {passwordErr ? <span className="text-xs font-semibold text-rose-700">{passwordErr}</span> : null}
+            {passwordMsg ? <span className="text-xs font-semibold text-emerald-700">{passwordMsg}</span> : null}
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={adminDark}
-            onClick={() => setAdminDark(!adminDark)}
-            className={cn(
-              "relative h-9 w-16 shrink-0 rounded-full border-2 transition-colors focus:outline-none focus:ring-4",
-              adminDark
-                ? "border-emerald-400/80 bg-emerald-600 focus:ring-emerald-500/40"
-                : "border-violet-200 bg-white focus:ring-violet-200 dark:border-white/20 dark:bg-slate-800",
-              adminDark ? "shadow-[0_0_20px_-4px_rgba(16,185,129,0.7)]" : ""
-            )}
-          >
-            <span
-              className={cn(
-                "absolute top-1 left-1 h-7 w-7 rounded-full bg-white shadow-md transition-transform dark:bg-slate-100",
-                adminDark ? "translate-x-7" : "translate-x-0"
-              )}
-            />
-          </button>
-        </div>
+        </form>
         {adminUser && (
           <p className="text-xs font-semibold text-violet-600 dark:text-violet-400">
             {adminUser.name} · {adminUser.login}
@@ -2189,8 +2254,7 @@ function AdminSettingsInner({ adminDark, setAdminDark }: AdminOutletCtx) {
 }
 
 function AdminSettingsPage() {
-  const ctx = useOutletContext<AdminOutletCtx>();
-  return <AdminSettingsInner {...ctx} />;
+  return <AdminSettingsInner />;
 }
 
 function AdminLayout() {
@@ -2198,8 +2262,6 @@ function AdminLayout() {
   const loc = useLocation();
   const nav = useNavigate();
   const { t } = useI18n();
-
-  const [adminDark, setAdminDark] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -2209,13 +2271,6 @@ function AdminLayout() {
       if (cancelled) return;
       if (res.ok) {
         const user = await readJSON<AdminUser>(res);
-        const k = `uniq.admin.theme.${user.id}`;
-        let v = localStorage.getItem(k);
-        if (v === null && localStorage.getItem("uniq.theme") === "dark") {
-          localStorage.setItem(k, "dark");
-          v = "dark";
-        }
-        setAdminDark(v === "dark");
         setAdminUser(user);
       } else {
         setAdminUser(null);
@@ -2225,21 +2280,6 @@ function AdminLayout() {
       cancelled = true;
     };
   }, [setAdminUser]);
-
-  useEffect(() => {
-    if (adminUser?.id == null) return;
-    localStorage.setItem(`uniq.admin.theme.${adminUser.id}`, adminDark ? "dark" : "light");
-  }, [adminUser?.id, adminDark]);
-
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    if (adminUser === undefined) return;
-    if (adminUser === null) {
-      root.classList.remove("dark");
-      return;
-    }
-    root.classList.toggle("dark", adminDark);
-  }, [adminUser, adminDark]);
 
   const logout = async () => {
     await fetchJSON("/api/admin/logout", { method: "POST" });
@@ -2282,15 +2322,6 @@ function AdminLayout() {
             </div>
             <button
               type="button"
-              onClick={() => setAdminDark(!adminDark)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
-              title={adminDark ? t("adminThemeLightHint") : t("adminThemeDarkHint")}
-              aria-label={adminDark ? t("adminThemeLightHint") : t("adminThemeDarkHint")}
-            >
-              {adminDark ? <Sun className="h-5 w-5" aria-hidden /> : <Moon className="h-5 w-5" aria-hidden />}
-            </button>
-            <button
-              type="button"
               onClick={() => void logout()}
               className="flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 text-xs font-extrabold text-white backdrop-blur-sm transition hover:bg-white/20"
             >
@@ -2302,7 +2333,7 @@ function AdminLayout() {
         <AdminTabNav />
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">
-        <Outlet context={{ adminDark, setAdminDark } as AdminOutletCtx} />
+        <Outlet />
       </main>
     </div>
   );

@@ -867,6 +867,14 @@ export default function StudentPage() {
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
           <div className="relative z-10 w-full max-w-md rounded-3xl border border-violet-100 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-950">
             <div className="text-lg font-black text-violet-950 dark:text-white">{t("studentReviewTitle")}</div>
+            {myTicket.student_comment ? (
+              <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-violet-700">
+                  {t("studentCommentFromManager")}
+                </div>
+                <div className="mt-1 text-sm font-semibold text-violet-900">{myTicket.student_comment}</div>
+              </div>
+            ) : null}
             <div className="mt-3 text-sm font-semibold text-violet-700 dark:text-violet-300">{t("studentReviewStars")}</div>
             <div className="mt-2 flex justify-center gap-2">
               {[1, 2, 3, 4, 5].map((n) => (

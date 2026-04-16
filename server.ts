@@ -18,6 +18,7 @@ import {
   reportTzLabel,
 } from "./server/pgHistory.js";
 import {
+  ensurePgCoreSchema,
   initPgCorePool,
   isPgCoreEnabled,
   pgAdminBookings,
@@ -140,7 +141,8 @@ CREATE TABLE IF NOT EXISTS tickets (
   advisor_faculty TEXT,
   advisor_department TEXT,
   comment TEXT,
-  case_type TEXT
+  case_type TEXT,
+  student_comment TEXT
 );
 
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -188,6 +190,9 @@ function migrateDb() {
   }
   if (!ticketNames.has("missed_student_note")) {
     db.exec("ALTER TABLE tickets ADD COLUMN missed_student_note TEXT");
+  }
+  if (!ticketNames.has("student_comment")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN student_comment TEXT");
   }
   const advisorCols = db.prepare("PRAGMA table_info(advisors)").all() as { name: string }[];
   const advisorNames = new Set(advisorCols.map((c) => c.name));
@@ -254,38 +259,7 @@ function migrateDb() {
 }
 
 function ensureSeed() {
-  const has = db.prepare("SELECT 1 as ok FROM advisors LIMIT 1").get() as { ok: 1 } | undefined;
-  if (!has) {
-    db.prepare(
-      `INSERT INTO advisors (name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_courses_json)
-       VALUES (@name, @faculty, @department, @desk, @login, @hash, @schools, @lang, @courses)`
-    ).run({
-      name: "Д-р Смирнов",
-      faculty: "Школа Цифровых Технологий",
-      department: "Окно 1",
-      desk: "1",
-      login: "smirnov",
-      hash: bcrypt.hashSync("Manager2026!", 10),
-      schools: JSON.stringify(["Школа Цифровых Технологий"]),
-      lang: "any",
-      courses: JSON.stringify([1, 2, 3, 4]),
-    });
-    db.prepare(
-      `INSERT INTO advisors (name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_courses_json)
-       VALUES (@name, @faculty, @department, @desk, @login, @hash, @schools, @lang, @courses)`
-    ).run({
-      name: "Проф. Иванов",
-      faculty: "Школа Бизнеса",
-      department: "Окно 2",
-      desk: "2",
-      login: "ivanov",
-      hash: bcrypt.hashSync("Manager2026!", 10),
-      schools: JSON.stringify([]),
-      lang: "any",
-      courses: JSON.stringify([1, 2, 3, 4]),
-    });
-  }
-
+  // По умолчанию сотрудников не создаём. Создание — только через админ-панель.
   const s = db.prepare("SELECT 1 as ok FROM queue_session WHERE id = 1").get() as { ok: 1 } | undefined;
   if (!s) db.prepare("INSERT INTO queue_session (id, is_active) VALUES (1, 1)").run();
 }
@@ -619,7 +593,7 @@ function getLiveQueue() {
     .prepare(
       `SELECT id, queue_number, status, school, specialty, specialty_code, language_section, course,
               advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department,
-              comment, case_type, preferred_slot_at, created_at
+              comment, case_type, student_comment, preferred_slot_at, created_at
        FROM tickets
        WHERE status IN ('WAITING','CALLED','IN_SERVICE')
        ORDER BY
@@ -721,6 +695,24 @@ app.get("/api/admin/me", requireAdmin, (req, res) => {
   res.json({ id: row.id, login: row.login, name: row.name || "Admin" });
 });
 
+app.patch("/api/admin/me/password", requireAdmin, (req, res) => {
+  const adminId = (req.session as any).adminId as number;
+  const { currentPassword, newPassword } = (req.body || {}) as { currentPassword?: string; newPassword?: string };
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Укажите текущий и новый пароль" });
+  if (String(newPassword).length < 6) return res.status(400).json({ error: "Новый пароль минимум 6 символов" });
+  const row = db.prepare("SELECT password_hash FROM admin_users WHERE id = ?").get(adminId) as
+    | { password_hash: string }
+    | undefined;
+  if (!row) return res.status(404).json({ error: "Админ не найден" });
+  if (!bcrypt.compareSync(String(currentPassword), row.password_hash)) {
+    return res.status(400).json({ error: "Текущий пароль неверный" });
+  }
+  const hash = bcrypt.hashSync(String(newPassword), 10);
+  db.prepare("UPDATE admin_users SET password_hash = ? WHERE id = ?").run(hash, adminId);
+  schedulePgCoreSync();
+  res.json({ ok: true });
+});
+
 app.get("/api/admin/managers", requireAdmin, (_req, res) => {
   const today = (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
   const rows = db
@@ -799,6 +791,27 @@ app.patch("/api/admin/managers/:id/desk", requireAdmin, (req, res) => {
     db.prepare("UPDATE advisors SET desk_number = ? WHERE id = ?").run(deskStr, id);
   });
   tx();
+  schedulePgCoreSync();
+  res.json({ ok: true });
+});
+
+app.delete("/api/admin/managers/:id", requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный id" });
+  const exists = db.prepare("SELECT 1 as ok FROM advisors WHERE id = ?").get(id) as { ok: 1 } | undefined;
+  if (!exists) return res.status(404).json({ error: "Сотрудник не найден" });
+
+  const active = db
+    .prepare("SELECT COUNT(*) as c FROM tickets WHERE advisor_id = ? AND status IN ('WAITING','CALLED','IN_SERVICE')")
+    .get(id) as { c: number };
+  if (active.c > 0) {
+    return res.status(409).json({ error: "Нельзя удалить: у сотрудника есть активные талоны" });
+  }
+
+  db.prepare("UPDATE tickets SET advisor_id = NULL WHERE advisor_id = ?").run(id);
+  db.prepare("DELETE FROM advisor_work_daily WHERE advisor_id = ?").run(id);
+  db.prepare("DELETE FROM advisor_work_totals WHERE advisor_id = ?").run(id);
+  db.prepare("DELETE FROM advisors WHERE id = ?").run(id);
   schedulePgCoreSync();
   res.json({ ok: true });
 });
@@ -1071,7 +1084,7 @@ app.get("/api/tickets/:id/status", (req, res) => {
     .prepare(
       `SELECT t.id, t.queue_number, t.status, t.school, t.specialty, t.specialty_code, t.language_section, t.course,
               t.advisor_name, t.advisor_desk, t.advisor_faculty, t.advisor_department,
-              t.comment, t.case_type, t.preferred_slot_at, t.missed_student_note,
+              t.comment, t.case_type, t.student_comment, t.preferred_slot_at, t.missed_student_note,
               CASE WHEN r.ticket_id IS NOT NULL THEN 1 ELSE 0 END AS has_review
        FROM tickets t
        LEFT JOIN ticket_reviews r ON r.ticket_id = t.id
@@ -1215,7 +1228,12 @@ app.post("/api/tickets/:id/call-to-my-desk", requireManager, (req, res) => {
 app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
-  const { status, comment, case_type } = (req.body || {}) as { status?: TicketStatus; comment?: string; case_type?: string | null };
+  const { status, comment, case_type, student_comment } = (req.body || {}) as {
+    status?: TicketStatus;
+    comment?: string;
+    case_type?: string | null;
+    student_comment?: string;
+  };
 
   let row = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
   if (!row) return res.status(404).json({ error: "Талон не найден" });
@@ -1226,6 +1244,10 @@ app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   }
   if (case_type !== undefined) {
     db.prepare("UPDATE tickets SET case_type = ? WHERE id = ?").run(case_type === null ? null : String(case_type), id);
+    schedulePgCoreSync();
+  }
+  if (student_comment !== undefined) {
+    db.prepare("UPDATE tickets SET student_comment = ? WHERE id = ?").run(String(student_comment || "").trim() || null, id);
     schedulePgCoreSync();
   }
 
@@ -1930,6 +1952,7 @@ const onListen = () => {
 async function bootstrapPersistence() {
   if (!isPgCoreEnabled()) return;
   try {
+    await ensurePgCoreSchema();
     const hasRemote = await pgCoreHasData();
     if (hasRemote) {
       await pgRestoreCoreToSqlite(db);

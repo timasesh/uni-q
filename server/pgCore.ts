@@ -19,6 +19,11 @@ export function initPgCorePool(): void {
   pool.on("error", (e) => console.error("[pg core]", e));
 }
 
+export async function ensurePgCoreSchema(): Promise<void> {
+  if (!pool) return;
+  await q("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS student_comment TEXT");
+}
+
 async function q(sql: string, params: unknown[] = []): Promise<pg.QueryResult<any>> {
   if (!pool) throw new Error("pg core pool is not initialized");
   return pool.query(sql, params);
@@ -257,7 +262,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
     ),
     tickets: sqliteRows(
       db,
-      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
+      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
     ),
     ticket_reviews: sqliteRows(
       db,
@@ -338,6 +343,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
         "advisor_department",
         "comment",
         "case_type",
+        "student_comment",
         "preferred_slot_at",
         "missed_student_note",
       ],
@@ -412,7 +418,7 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     q("SELECT advisor_id, total_ms, updated_at FROM advisor_work_totals ORDER BY advisor_id ASC"),
     q("SELECT advisor_id, day, work_ms FROM advisor_work_daily ORDER BY advisor_id ASC, day ASC"),
     q(
-      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
+      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
     ),
     q("SELECT ticket_id, stars, comment, created_at FROM ticket_reviews ORDER BY ticket_id ASC"),
     q("SELECT id, event_type, meta, created_at FROM stats_events ORDER BY id ASC"),
@@ -452,8 +458,8 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     }
     for (const r of tickets.rows) {
       db.prepare(
-        `INSERT INTO tickets (id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, preferred_slot_at, missed_student_note)
-         VALUES (@id, @queue_number, @status, @student_first_name, @student_last_name, @school, @specialty, @specialty_code, @language_section, @course, @created_at, @called_at, @started_at, @finished_at, @advisor_id, @advisor_name, @advisor_desk, @advisor_faculty, @advisor_department, @comment, @case_type, @preferred_slot_at, @missed_student_note)`
+        `INSERT INTO tickets (id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note)
+         VALUES (@id, @queue_number, @status, @student_first_name, @student_last_name, @school, @specialty, @specialty_code, @language_section, @course, @created_at, @called_at, @started_at, @finished_at, @advisor_id, @advisor_name, @advisor_desk, @advisor_faculty, @advisor_department, @comment, @case_type, @student_comment, @preferred_slot_at, @missed_student_note)`
       ).run(r as any);
     }
     for (const r of reviews.rows) {
