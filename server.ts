@@ -20,7 +20,13 @@ import {
 import {
   initPgCorePool,
   isPgCoreEnabled,
+  pgAdminBookings,
+  pgAdminLoad,
+  pgAdminReviews,
+  pgAdminSummary,
+  pgAdminWaitTimes,
   pgCoreHasData,
+  pgFaqNoQueue,
   pgRestoreCoreToSqlite,
   pgSyncCoreFromSqlite,
 } from "./server/pgCore.js";
@@ -1364,7 +1370,14 @@ app.post("/api/stats/event", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/admin/stats/summary", requireAdmin, (_req, res) => {
+app.get("/api/admin/stats/summary", requireAdmin, async (_req, res) => {
+  if (isPgCoreEnabled()) {
+    try {
+      return res.json(await pgAdminSummary());
+    } catch (e) {
+      console.error("[pg admin summary]", e);
+    }
+  }
   const events = db.prepare(`SELECT event_type, COUNT(*) as count FROM stats_events GROUP BY event_type`).all() as {
     event_type: string;
     count: number;
@@ -1382,7 +1395,7 @@ app.get("/api/admin/stats/summary", requireAdmin, (_req, res) => {
 });
 
 /** Открытия FAQ без талона по дням (событие faq_no_queue). from/to — фильтр по дате события; format=csv — Excel. */
-app.get("/api/admin/stats/faq-no-queue", requireAdmin, (req, res) => {
+app.get("/api/admin/stats/faq-no-queue", requireAdmin, async (req, res) => {
   const format = String(req.query.format || "json").toLowerCase();
   const from = parseYmdParam(String(req.query.from || ""));
   const to = parseYmdParam(String(req.query.to || ""));
@@ -1390,16 +1403,35 @@ app.get("/api/admin/stats/faq-no-queue", requireAdmin, (req, res) => {
     return res.status(400).json({ error: "Укажите обе даты from и to или ни одной" });
   }
   if (from && to && from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
-  let sql = `SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
-       FROM stats_events
-       WHERE event_type = 'faq_no_queue'`;
-  const params: string[] = [];
-  if (from && to) {
-    sql += ` AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`;
-    params.push(from, to);
+  let rows: { day: string; count: number }[];
+  if (isPgCoreEnabled()) {
+    try {
+      rows = await pgFaqNoQueue(from, to);
+    } catch (e) {
+      console.error("[pg faq no queue]", e);
+      let sql = `SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
+           FROM stats_events
+           WHERE event_type = 'faq_no_queue'`;
+      const params: string[] = [];
+      if (from && to) {
+        sql += ` AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`;
+        params.push(from, to);
+      }
+      sql += ` GROUP BY date(created_at, 'localtime') ORDER BY day ASC`;
+      rows = db.prepare(sql).all(...params) as { day: string; count: number }[];
+    }
+  } else {
+    let sql = `SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
+         FROM stats_events
+         WHERE event_type = 'faq_no_queue'`;
+    const params: string[] = [];
+    if (from && to) {
+      sql += ` AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`;
+      params.push(from, to);
+    }
+    sql += ` GROUP BY date(created_at, 'localtime') ORDER BY day ASC`;
+    rows = db.prepare(sql).all(...params) as { day: string; count: number }[];
   }
-  sql += ` GROUP BY date(created_at, 'localtime') ORDER BY day ASC`;
-  const rows = db.prepare(sql).all(...params) as { day: string; count: number }[];
 
   if (format === "csv") {
     const header = "date;count";
@@ -1414,7 +1446,7 @@ app.get("/api/admin/stats/faq-no-queue", requireAdmin, (req, res) => {
 });
 
 /** Время ожидания (мин) от регистрации до вызова или начала приёма; фильтр по дате регистрации. */
-app.get("/api/admin/stats/wait-times", requireAdmin, (req, res) => {
+app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
   const from = parseYmdParam(String(req.query.from || ""));
   const to = parseYmdParam(String(req.query.to || ""));
   if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
@@ -1423,57 +1455,65 @@ app.get("/api/admin/stats/wait-times", requireAdmin, (req, res) => {
   const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
   const format = String(req.query.format || "json").toLowerCase();
 
-  const raw = db
-    .prepare(
-      `SELECT
-         t.id AS ticket_id,
-         t.queue_number,
-         t.student_first_name,
-         t.student_last_name,
-         t.school,
-         t.status,
-         t.created_at,
-         t.called_at,
-         t.started_at,
-         CASE
-           WHEN t.called_at IS NOT NULL
-             THEN (strftime('%s', t.called_at) - strftime('%s', t.created_at)) / 60.0
-           WHEN t.started_at IS NOT NULL
-             THEN (strftime('%s', t.started_at) - strftime('%s', t.created_at)) / 60.0
-           ELSE NULL
-         END AS wait_minutes
-       FROM tickets t
-       WHERE date(t.created_at, 'localtime') >= ? AND date(t.created_at, 'localtime') <= ?
-         AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)`
-    )
-    .all(from, to) as {
-    ticket_id: number;
-    queue_number: number;
-    student_first_name: string | null;
-    student_last_name: string | null;
-    school: string | null;
-    status: string;
-    created_at: string;
-    called_at: string | null;
-    started_at: string | null;
-    wait_minutes: number | null;
-  }[];
-
-  let rows = raw.filter((r) => r.wait_minutes != null && Number.isFinite(Number(r.wait_minutes)) && Number(r.wait_minutes) >= 0);
-  if (statusFilter && validStatuses.has(statusFilter)) {
-    rows = rows.filter((r) => r.status === statusFilter);
-  }
   const minWait = Number(req.query.minWait ?? "");
   const maxWait = Number(req.query.maxWait ?? "");
-  if (Number.isFinite(minWait)) rows = rows.filter((r) => Number(r.wait_minutes) >= minWait);
-  if (Number.isFinite(maxWait)) rows = rows.filter((r) => Number(r.wait_minutes) <= maxWait);
-
-  const waits = rows.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);
-  const count = waits.length;
-  const sum = waits.reduce((a, b) => a + b, 0);
-  const avgMin = count ? sum / count : 0;
-  const medianMin =
-    count === 0 ? 0 : count % 2 === 1 ? waits[(count - 1) / 2]! : (waits[count / 2 - 1]! + waits[count / 2]!) / 2;
+  let rows: any[] = [];
+  let count = 0;
+  let avgMin = 0;
+  let medianMin = 0;
+  if (isPgCoreEnabled()) {
+    try {
+      const pgRes = await pgAdminWaitTimes(
+        from,
+        to,
+        statusFilter && validStatuses.has(statusFilter) ? statusFilter : undefined,
+        Number.isFinite(minWait) ? minWait : null,
+        Number.isFinite(maxWait) ? maxWait : null
+      );
+      rows = pgRes.rows;
+      count = pgRes.summary.count;
+      avgMin = pgRes.summary.avgMin;
+      medianMin = pgRes.summary.medianMin;
+    } catch (e) {
+      console.error("[pg wait times]", e);
+    }
+  }
+  if (rows.length === 0 && !count && !avgMin && !medianMin) {
+    const raw = db
+      .prepare(
+        `SELECT
+           t.id AS ticket_id,
+           t.queue_number,
+           t.student_first_name,
+           t.student_last_name,
+           t.school,
+           t.status,
+           t.created_at,
+           t.called_at,
+           t.started_at,
+           CASE
+             WHEN t.called_at IS NOT NULL
+               THEN (strftime('%s', t.called_at) - strftime('%s', t.created_at)) / 60.0
+             WHEN t.started_at IS NOT NULL
+               THEN (strftime('%s', t.started_at) - strftime('%s', t.created_at)) / 60.0
+             ELSE NULL
+           END AS wait_minutes
+         FROM tickets t
+         WHERE date(t.created_at, 'localtime') >= ? AND date(t.created_at, 'localtime') <= ?
+           AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)`
+      )
+      .all(from, to) as any[];
+    rows = raw.filter((r) => r.wait_minutes != null && Number.isFinite(Number(r.wait_minutes)) && Number(r.wait_minutes) >= 0);
+    if (statusFilter && validStatuses.has(statusFilter)) rows = rows.filter((r) => r.status === statusFilter);
+    if (Number.isFinite(minWait)) rows = rows.filter((r) => Number(r.wait_minutes) >= minWait);
+    if (Number.isFinite(maxWait)) rows = rows.filter((r) => Number(r.wait_minutes) <= maxWait);
+    const waits = rows.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);
+    count = waits.length;
+    const sum = waits.reduce((a, b) => a + b, 0);
+    avgMin = count ? sum / count : 0;
+    medianMin =
+      count === 0 ? 0 : count % 2 === 1 ? waits[(count - 1) / 2]! : (waits[count / 2 - 1]! + waits[count / 2]!) / 2;
+  }
 
   if (format === "csv") {
     const header =
@@ -1513,7 +1553,7 @@ app.get("/api/admin/stats/wait-times", requireAdmin, (req, res) => {
 });
 
 /** Талоны с бронью (preferred_slot_at): кто на какое время, фильтр по дате слота. */
-app.get("/api/admin/stats/bookings", requireAdmin, (req, res) => {
+app.get("/api/admin/stats/bookings", requireAdmin, async (req, res) => {
   const from = parseYmdParam(String(req.query.from || ""));
   const to = parseYmdParam(String(req.query.to || ""));
   if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
@@ -1522,22 +1562,34 @@ app.get("/api/admin/stats/bookings", requireAdmin, (req, res) => {
   const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
   const format = String(req.query.format || "json").toLowerCase();
 
-  let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
-       preferred_slot_at, status, created_at, advisor_name, advisor_desk
-     FROM tickets
-     WHERE preferred_slot_at IS NOT NULL
-       AND date(preferred_slot_at, 'localtime') >= ? AND date(preferred_slot_at, 'localtime') <= ?`;
-  const params: (string | number)[] = [from, to];
-  if (statusFilter && validStatuses.has(statusFilter)) {
-    sql += " AND status = ?";
-    params.push(statusFilter);
-  }
-  sql += " ORDER BY preferred_slot_at ASC, id ASC";
-  let rows = db.prepare(sql).all(...params) as any[];
-
   const schoolQ = String(req.query.school || "").trim().toLowerCase();
-  if (schoolQ) {
-    rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
+  let rows: any[] = [];
+  if (isPgCoreEnabled()) {
+    try {
+      rows = await pgAdminBookings(
+        from,
+        to,
+        statusFilter && validStatuses.has(statusFilter) ? statusFilter : undefined,
+        schoolQ || undefined
+      );
+    } catch (e) {
+      console.error("[pg bookings]", e);
+    }
+  }
+  if (rows.length === 0) {
+    let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
+         preferred_slot_at, status, created_at, advisor_name, advisor_desk
+       FROM tickets
+       WHERE preferred_slot_at IS NOT NULL
+         AND date(preferred_slot_at, 'localtime') >= ? AND date(preferred_slot_at, 'localtime') <= ?`;
+    const params: (string | number)[] = [from, to];
+    if (statusFilter && validStatuses.has(statusFilter)) {
+      sql += " AND status = ?";
+      params.push(statusFilter);
+    }
+    sql += " ORDER BY preferred_slot_at ASC, id ASC";
+    rows = db.prepare(sql).all(...params) as any[];
+    if (schoolQ) rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
   }
 
   if (format === "csv") {
@@ -1577,10 +1629,17 @@ app.get("/api/admin/stats/bookings", requireAdmin, (req, res) => {
 });
 
 /** Нагрузка по часам (локальное время): регистрации талонов и вызовы к окну, 9:00–18:00. */
-app.get("/api/admin/stats/load", requireAdmin, (req, res) => {
+app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
   const dateStr = String(req.query.date || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return res.status(400).json({ error: "Укажите дату в формате YYYY-MM-DD" });
+  }
+  if (isPgCoreEnabled()) {
+    try {
+      return res.json(await pgAdminLoad(dateStr));
+    } catch (e) {
+      console.error("[pg admin load]", e);
+    }
   }
   const startHour = 9;
   const endHour = 18;
@@ -1737,7 +1796,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
 });
 
 /** Отзывы студентов за период (дата отправки отзыва). format=csv — Excel. */
-app.get("/api/admin/stats/reviews", requireAdmin, (req, res) => {
+app.get("/api/admin/stats/reviews", requireAdmin, async (req, res) => {
   const from = parseYmdParam(String(req.query.from || ""));
   const to = parseYmdParam(String(req.query.to || ""));
   if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
@@ -1748,31 +1807,44 @@ app.get("/api/admin/stats/reviews", requireAdmin, (req, res) => {
   const starsEq = starsRaw === "" ? null : Number(starsRaw);
   const schoolQ = String(req.query.school || "").trim().toLowerCase();
 
-  let sql = `SELECT
-         r.ticket_id,
-         r.stars,
-         r.comment AS review_comment,
-         r.created_at AS review_at,
-         t.queue_number,
-         t.student_first_name,
-         t.student_last_name,
-         t.advisor_name,
-         t.advisor_desk,
-         t.school,
-         t.specialty,
-         t.finished_at AS visit_finished_at
-       FROM ticket_reviews r
-       JOIN tickets t ON t.id = r.ticket_id
-       WHERE date(r.created_at, 'localtime') >= ? AND date(r.created_at, 'localtime') <= ?`;
-  const params: (string | number)[] = [from, to];
-  if (starsEq != null && Number.isFinite(starsEq) && starsEq >= 1 && starsEq <= 5) {
-    sql += " AND r.stars = ?";
-    params.push(Math.round(starsEq));
+  let rows: any[] = [];
+  if (isPgCoreEnabled()) {
+    try {
+      rows = await pgAdminReviews(
+        from,
+        to,
+        starsEq != null && Number.isFinite(starsEq) && starsEq >= 1 && starsEq <= 5 ? Math.round(starsEq) : null,
+        schoolQ || undefined
+      );
+    } catch (e) {
+      console.error("[pg admin reviews]", e);
+    }
   }
-  sql += " ORDER BY r.created_at DESC, r.ticket_id DESC";
-  let rows = db.prepare(sql).all(...params) as any[];
-  if (schoolQ) {
-    rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
+  if (rows.length === 0) {
+    let sql = `SELECT
+           r.ticket_id,
+           r.stars,
+           r.comment AS review_comment,
+           r.created_at AS review_at,
+           t.queue_number,
+           t.student_first_name,
+           t.student_last_name,
+           t.advisor_name,
+           t.advisor_desk,
+           t.school,
+           t.specialty,
+           t.finished_at AS visit_finished_at
+         FROM ticket_reviews r
+         JOIN tickets t ON t.id = r.ticket_id
+         WHERE date(r.created_at, 'localtime') >= ? AND date(r.created_at, 'localtime') <= ?`;
+    const params: (string | number)[] = [from, to];
+    if (starsEq != null && Number.isFinite(starsEq) && starsEq >= 1 && starsEq <= 5) {
+      sql += " AND r.stars = ?";
+      params.push(Math.round(starsEq));
+    }
+    sql += " ORDER BY r.created_at DESC, r.ticket_id DESC";
+    rows = db.prepare(sql).all(...params) as any[];
+    if (schoolQ) rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
   }
 
   if (format === "csv") {

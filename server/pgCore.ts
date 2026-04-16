@@ -2,6 +2,7 @@ import pg from "pg";
 import type Database from "better-sqlite3";
 
 let pool: pg.Pool | null = null;
+const REPORT_TZ = process.env.UNIQ_REPORT_TZ || "UTC";
 
 export function isPgCoreEnabled(): boolean {
   return Boolean(process.env.DATABASE_URL?.trim());
@@ -21,6 +22,183 @@ export function initPgCorePool(): void {
 async function q(sql: string, params: unknown[] = []): Promise<pg.QueryResult<any>> {
   if (!pool) throw new Error("pg core pool is not initialized");
   return pool.query(sql, params);
+}
+
+export async function pgAdminSummary(): Promise<{
+  events: { event_type: string; count: number }[];
+  reviewsTotal: number;
+  ticketsToday: number;
+  bookedSlotsLive: number;
+}> {
+  const [eventsR, reviewsR, todayR, bookedR] = await Promise.all([
+    q("SELECT event_type, COUNT(*)::int AS count FROM stats_events GROUP BY event_type ORDER BY event_type ASC"),
+    q("SELECT COUNT(*)::int AS c FROM ticket_reviews"),
+    q(`SELECT COUNT(*)::int AS c FROM tickets WHERE (created_at AT TIME ZONE $1)::date = (NOW() AT TIME ZONE $1)::date`, [
+      REPORT_TZ,
+    ]),
+    q(
+      `SELECT COUNT(*)::int AS c FROM tickets WHERE preferred_slot_at IS NOT NULL AND status IN ('WAITING','CALLED','IN_SERVICE')`
+    ),
+  ]);
+  return {
+    events: eventsR.rows,
+    reviewsTotal: Number(reviewsR.rows[0]?.c || 0),
+    ticketsToday: Number(todayR.rows[0]?.c || 0),
+    bookedSlotsLive: Number(bookedR.rows[0]?.c || 0),
+  };
+}
+
+export async function pgFaqNoQueue(from?: string | null, to?: string | null): Promise<{ day: string; count: number }[]> {
+  const params: unknown[] = [REPORT_TZ];
+  let sql = `SELECT ((created_at AT TIME ZONE $1)::date)::text AS day, COUNT(*)::int AS count
+             FROM stats_events
+             WHERE event_type = 'faq_no_queue'`;
+  if (from && to) {
+    params.push(from, to);
+    sql += ` AND (created_at AT TIME ZONE $1)::date >= $2::date AND (created_at AT TIME ZONE $1)::date <= $3::date`;
+  }
+  sql += ` GROUP BY (created_at AT TIME ZONE $1)::date ORDER BY day ASC`;
+  const { rows } = await q(sql, params);
+  return rows;
+}
+
+export async function pgAdminLoad(dateStr: string): Promise<{
+  date: string;
+  startHour: number;
+  endHour: number;
+  registrations: { hour: number; count: number }[];
+  calls: { hour: number; count: number }[];
+}> {
+  const startHour = 9;
+  const endHour = 18;
+  const [regRows, callRows] = await Promise.all([
+    q(
+      `SELECT EXTRACT(HOUR FROM (created_at AT TIME ZONE $1))::int AS hour, COUNT(*)::int AS c
+       FROM tickets
+       WHERE (created_at AT TIME ZONE $1)::date = $2::date
+         AND EXTRACT(HOUR FROM (created_at AT TIME ZONE $1)) BETWEEN $3 AND $4
+       GROUP BY 1`,
+      [REPORT_TZ, dateStr, startHour, endHour]
+    ),
+    q(
+      `SELECT EXTRACT(HOUR FROM (called_at AT TIME ZONE $1))::int AS hour, COUNT(*)::int AS c
+       FROM tickets
+       WHERE called_at IS NOT NULL
+         AND (called_at AT TIME ZONE $1)::date = $2::date
+         AND EXTRACT(HOUR FROM (called_at AT TIME ZONE $1)) BETWEEN $3 AND $4
+       GROUP BY 1`,
+      [REPORT_TZ, dateStr, startHour, endHour]
+    ),
+  ]);
+  const regMap = new Map<number, number>(regRows.rows.map((r) => [Number(r.hour), Number(r.c)]));
+  const callMap = new Map<number, number>(callRows.rows.map((r) => [Number(r.hour), Number(r.c)]));
+  const registrations = [];
+  const calls = [];
+  for (let h = startHour; h <= endHour; h++) {
+    registrations.push({ hour: h, count: regMap.get(h) ?? 0 });
+    calls.push({ hour: h, count: callMap.get(h) ?? 0 });
+  }
+  return { date: dateStr, startHour, endHour, registrations, calls };
+}
+
+export async function pgAdminBookings(from: string, to: string, status?: string, school?: string): Promise<any[]> {
+  const params: unknown[] = [REPORT_TZ, from, to];
+  let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
+                    preferred_slot_at, status, created_at, advisor_name, advisor_desk
+             FROM tickets
+             WHERE preferred_slot_at IS NOT NULL
+               AND (preferred_slot_at AT TIME ZONE $1)::date >= $2::date
+               AND (preferred_slot_at AT TIME ZONE $1)::date <= $3::date`;
+  if (status) {
+    params.push(status);
+    sql += ` AND status = $${params.length}`;
+  }
+  if (school) {
+    params.push(`%${school.toLowerCase()}%`);
+    sql += ` AND LOWER(COALESCE(school, '')) LIKE $${params.length}`;
+  }
+  sql += ` ORDER BY preferred_slot_at ASC NULLS LAST, id ASC`;
+  const { rows } = await q(sql, params);
+  return rows;
+}
+
+export async function pgAdminReviews(from: string, to: string, stars?: number | null, school?: string): Promise<any[]> {
+  const params: unknown[] = [REPORT_TZ, from, to];
+  let sql = `SELECT
+               r.ticket_id,
+               r.stars,
+               r.comment AS review_comment,
+               r.created_at AS review_at,
+               t.queue_number,
+               t.student_first_name,
+               t.student_last_name,
+               t.advisor_name,
+               t.advisor_desk,
+               t.school,
+               t.specialty,
+               t.finished_at AS visit_finished_at
+             FROM ticket_reviews r
+             JOIN tickets t ON t.id = r.ticket_id
+             WHERE (r.created_at AT TIME ZONE $1)::date >= $2::date
+               AND (r.created_at AT TIME ZONE $1)::date <= $3::date`;
+  if (stars != null) {
+    params.push(stars);
+    sql += ` AND r.stars = $${params.length}`;
+  }
+  if (school) {
+    params.push(`%${school.toLowerCase()}%`);
+    sql += ` AND LOWER(COALESCE(t.school, '')) LIKE $${params.length}`;
+  }
+  sql += ` ORDER BY r.created_at DESC, r.ticket_id DESC`;
+  const { rows } = await q(sql, params);
+  return rows;
+}
+
+export async function pgAdminWaitTimes(
+  from: string,
+  to: string,
+  status?: string,
+  minWait?: number | null,
+  maxWait?: number | null
+): Promise<{
+  summary: { count: number; avgMin: number; medianMin: number };
+  rows: any[];
+}> {
+  const params: unknown[] = [REPORT_TZ, from, to];
+  let sql = `SELECT
+               t.id AS ticket_id,
+               t.queue_number,
+               t.student_first_name,
+               t.student_last_name,
+               t.school,
+               t.status,
+               t.created_at,
+               t.called_at,
+               t.started_at,
+               CASE
+                 WHEN t.called_at IS NOT NULL THEN EXTRACT(EPOCH FROM (t.called_at - t.created_at)) / 60.0
+                 WHEN t.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (t.started_at - t.created_at)) / 60.0
+                 ELSE NULL
+               END AS wait_minutes
+             FROM tickets t
+             WHERE (t.created_at AT TIME ZONE $1)::date >= $2::date
+               AND (t.created_at AT TIME ZONE $1)::date <= $3::date
+               AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)`;
+  if (status) {
+    params.push(status);
+    sql += ` AND t.status = $${params.length}`;
+  }
+  const { rows } = await q(sql, params);
+  let filtered = rows.filter((r) => r.wait_minutes != null && Number(r.wait_minutes) >= 0);
+  if (minWait != null) filtered = filtered.filter((r) => Number(r.wait_minutes) >= minWait);
+  if (maxWait != null) filtered = filtered.filter((r) => Number(r.wait_minutes) <= maxWait);
+  const waits = filtered.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);
+  const count = waits.length;
+  const sum = waits.reduce((a, b) => a + b, 0);
+  const avgMin = count ? sum / count : 0;
+  const medianMin =
+    count === 0 ? 0 : count % 2 === 1 ? waits[(count - 1) / 2]! : (waits[count / 2 - 1]! + waits[count / 2]!) / 2;
+  return { summary: { count, avgMin, medianMin }, rows: filtered };
 }
 
 export async function pgCoreHasData(): Promise<boolean> {
