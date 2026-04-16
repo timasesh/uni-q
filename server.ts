@@ -339,6 +339,21 @@ function schedulePgCoreSync() {
   }, 250);
 }
 
+async function flushPgCoreSyncNow() {
+  if (!isPgCoreEnabled()) return;
+  if (pgCoreSyncTimer) {
+    clearTimeout(pgCoreSyncTimer);
+    pgCoreSyncTimer = null;
+  }
+  pgCoreSyncPending = false;
+  try {
+    await pgSyncCoreFromSqlite(db);
+    console.log("[pg core] flushed snapshot to PostgreSQL");
+  } catch (e) {
+    console.error("[pg core flush]", e);
+  }
+}
+
 function countWords(text: string | null | undefined): number {
   return String(text || "")
     .trim()
@@ -1197,7 +1212,7 @@ app.post("/api/tickets/:id/call-to-my-desk", requireManager, (req, res) => {
   res.json({ ok: true, ticketId: id });
 });
 
-app.patch("/api/tickets/:id", requireManager, (req, res) => {
+app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
   const { status, comment, case_type } = (req.body || {}) as { status?: TicketStatus; comment?: string; case_type?: string | null };
@@ -1249,10 +1264,11 @@ app.patch("/api/tickets/:id", requireManager, (req, res) => {
   }
 
   broadcastQueue();
+  await flushPgCoreSyncNow();
   res.json({ ok: true });
 });
 
-app.post("/api/tickets/:id/review", (req, res) => {
+app.post("/api/tickets/:id/review", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
   const trow = db.prepare("SELECT id, status FROM tickets WHERE id = ?").get(id) as { id: number; status: string } | undefined;
@@ -1270,7 +1286,7 @@ app.post("/api/tickets/:id/review", (req, res) => {
     st,
     String(comment || "").trim() || null
   );
-  schedulePgCoreSync();
+  await flushPgCoreSyncNow();
   res.json({ ok: true });
 });
 
@@ -1359,14 +1375,14 @@ app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
   res.status(400).json({ error: "Неизвестное действие" });
 });
 
-app.post("/api/stats/event", (req, res) => {
+app.post("/api/stats/event", async (req, res) => {
   const { event_type, meta } = (req.body || {}) as { event_type?: string; meta?: unknown };
   if (!event_type || typeof event_type !== "string") return res.status(400).json({ error: "Нужен event_type" });
   db.prepare(`INSERT INTO stats_events (event_type, meta) VALUES (?, ?)`).run(
     event_type.slice(0, 80),
     meta !== undefined ? JSON.stringify(meta) : null
   );
-  schedulePgCoreSync();
+  await flushPgCoreSyncNow();
   res.json({ ok: true });
 });
 
@@ -1935,4 +1951,21 @@ void (async () => {
     httpServer.listen(PORT, onListen);
   }
 })();
+
+async function gracefulFlushAndExit(signal: string) {
+  console.log(`[shutdown] ${signal}`);
+  try {
+    await flushPgCoreSyncNow();
+  } catch (e) {
+    console.error("[shutdown flush]", e);
+  }
+  process.exit(0);
+}
+
+process.once("SIGTERM", () => {
+  void gracefulFlushAndExit("SIGTERM");
+});
+process.once("SIGINT", () => {
+  void gracefulFlushAndExit("SIGINT");
+});
 
