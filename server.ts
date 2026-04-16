@@ -17,6 +17,13 @@ import {
   pgAdvisorVisitRows,
   reportTzLabel,
 } from "./server/pgHistory.js";
+import {
+  initPgCorePool,
+  isPgCoreEnabled,
+  pgCoreHasData,
+  pgRestoreCoreToSqlite,
+  pgSyncCoreFromSqlite,
+} from "./server/pgCore.js";
 import { backendInstantMs } from "./src/lib/backendDateTime.ts";
 
 type TicketStatus = "WAITING" | "CALLED" | "IN_SERVICE" | "MISSED" | "DONE" | "CANCELLED";
@@ -82,6 +89,7 @@ if (process.env.DATABASE_DNS_IPV4_FIRST !== "0" && process.env.DATABASE_URL?.tri
   }
 }
 initPgHistoryPool();
+initPgCorePool();
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS queue_session (
@@ -299,6 +307,31 @@ function ensureAdminSeed() {
 }
 ensureAdminSeed();
 migrateDb();
+
+let pgCoreSyncTimer: NodeJS.Timeout | null = null;
+let pgCoreSyncRunning = false;
+let pgCoreSyncPending = false;
+
+function schedulePgCoreSync() {
+  if (!isPgCoreEnabled()) return;
+  pgCoreSyncPending = true;
+  if (pgCoreSyncTimer) return;
+  pgCoreSyncTimer = setTimeout(async () => {
+    pgCoreSyncTimer = null;
+    if (pgCoreSyncRunning) return;
+    pgCoreSyncRunning = true;
+    try {
+      while (pgCoreSyncPending) {
+        pgCoreSyncPending = false;
+        await pgSyncCoreFromSqlite(db);
+      }
+    } catch (e) {
+      console.error("[pg core sync]", e);
+    } finally {
+      pgCoreSyncRunning = false;
+    }
+  }, 250);
+}
 
 function countWords(text: string | null | undefined): number {
   return String(text || "")
@@ -594,11 +627,13 @@ function broadcastQueue() {
 app.get("/api/session", (_req, res) => res.json(getQueueSession()));
 app.post("/api/session/start", requireManager, (_req, res) => {
   db.prepare("UPDATE queue_session SET is_active = 1 WHERE id = 1").run();
+  schedulePgCoreSync();
   broadcastQueue();
   res.json(getQueueSession());
 });
 app.post("/api/session/stop", requireManager, (_req, res) => {
   db.prepare("UPDATE queue_session SET is_active = 0 WHERE id = 1").run();
+  schedulePgCoreSync();
   broadcastQueue();
   res.json(getQueueSession());
 });
@@ -708,6 +743,7 @@ app.post("/api/admin/managers", requireAdmin, (req, res) => {
        ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, 1)`
     )
     .run(name, login, hash);
+  schedulePgCoreSync();
   res.json({ ok: true, id: Number(info.lastInsertRowid) });
 });
 
@@ -742,6 +778,7 @@ app.patch("/api/admin/managers/:id/desk", requireAdmin, (req, res) => {
     db.prepare("UPDATE advisors SET desk_number = ? WHERE id = ?").run(deskStr, id);
   });
   tx();
+  schedulePgCoreSync();
   res.json({ ok: true });
 });
 
@@ -767,6 +804,7 @@ app.patch("/api/managers/me/reception", requireManager, (req, res) => {
   const advisorId = (req.session as any).managerId as number;
   const open = Boolean((req.body || {}).open);
   db.prepare("UPDATE advisors SET reception_open = ? WHERE id = ?").run(open ? 1 : 0, advisorId);
+  schedulePgCoreSync();
   broadcastQueue();
   const row = db
     .prepare(
@@ -805,6 +843,7 @@ app.patch("/api/managers/me/work-total", requireManager, (req, res) => {
          work_ms = MAX(work_ms, excluded.work_ms)`
     ).run(advisorId, day, Math.floor(todayMs));
   }
+  schedulePgCoreSync();
   res.json({ ok: true });
 });
 
@@ -917,6 +956,7 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
     specs.length > 0 ? JSON.stringify(specs) : null,
     advisorId
   );
+  schedulePgCoreSync();
   const row = db
     .prepare(
       `SELECT id, name, faculty, department, desk_number, assigned_schools_json, assigned_language,
@@ -998,6 +1038,7 @@ app.post("/api/tickets", (req, res) => {
     .get(info.lastInsertRowid) as any;
 
   const estimated_time = computeEstimatedMinutes(ticket);
+  schedulePgCoreSync();
   broadcastQueue();
   res.json({ ...ticket, formatted_number: formatQueueNumber(ticket.queue_number), estimated_time });
 });
@@ -1028,6 +1069,7 @@ app.post("/api/tickets/:id/cancel", (req, res) => {
   if (!row) return res.status(404).json({ error: "Талон не найден" });
   if (row.status !== "WAITING") return res.status(409).json({ error: "Отмена доступна только для талонов в ожидании" });
   db.prepare("UPDATE tickets SET status = 'CANCELLED', finished_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+  schedulePgCoreSync();
   broadcastQueue();
   res.json({ ok: true, id });
 });
@@ -1065,6 +1107,7 @@ app.post("/api/tickets/call-next", requireManager, (req, res) => {
      WHERE id = ?`
   ).run(advisorId, advisorRow.name, advisorRow.desk_number, advisorRow.faculty, advisorRow.department, next.id);
 
+  schedulePgCoreSync();
   broadcastQueue();
   res.json({ ok: true, ticketId: next.id });
 });
@@ -1104,6 +1147,7 @@ app.post("/api/tickets/:id/call-booked", requireManager, (req, res) => {
      WHERE id = ?`
   ).run(advisorId, advisorRow.name, advisorRow.desk_number, advisorRow.faculty, advisorRow.department, id);
 
+  schedulePgCoreSync();
   broadcastQueue();
   res.json({ ok: true, ticketId: id });
 });
@@ -1142,6 +1186,7 @@ app.post("/api/tickets/:id/call-to-my-desk", requireManager, (req, res) => {
      WHERE id = ?`
   ).run(advisorId, advisorRow.name, advisorRow.desk_number, advisorRow.faculty, advisorRow.department, id);
 
+  schedulePgCoreSync();
   broadcastQueue();
   res.json({ ok: true, ticketId: id });
 });
@@ -1156,9 +1201,11 @@ app.patch("/api/tickets/:id", requireManager, (req, res) => {
 
   if (comment !== undefined) {
     db.prepare("UPDATE tickets SET comment = ? WHERE id = ?").run(String(comment), id);
+    schedulePgCoreSync();
   }
   if (case_type !== undefined) {
     db.prepare("UPDATE tickets SET case_type = ? WHERE id = ?").run(case_type === null ? null : String(case_type), id);
+    schedulePgCoreSync();
   }
 
   row = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
@@ -1185,11 +1232,13 @@ app.patch("/api/tickets/:id", requireManager, (req, res) => {
            finished_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE finished_at END
        WHERE id = ?`
     ).run(status, status === "IN_SERVICE" ? 1 : null, terminal ? 1 : 0, id);
+    schedulePgCoreSync();
 
     if (terminal && !wasTerminal) {
       const trow = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
       const prev = db.prepare("SELECT COUNT(*) as c FROM ticket_visit_log WHERE ticket_id = ?").get(id) as { c: number };
       insertVisitLogFromTicket(trow, prev.c > 0 ? 1 : 0);
+      schedulePgCoreSync();
     }
   }
 
@@ -1215,6 +1264,7 @@ app.post("/api/tickets/:id/review", (req, res) => {
     st,
     String(comment || "").trim() || null
   );
+  schedulePgCoreSync();
   res.json({ ok: true });
 });
 
@@ -1231,6 +1281,7 @@ app.post("/api/tickets/:id/missed-feedback", (req, res) => {
   const raw = (req.body || {}) as { reason?: string };
   const note = String(raw.reason ?? "").trim().slice(0, 2000);
   db.prepare("UPDATE tickets SET missed_student_note = ? WHERE id = ?").run(note, id);
+  schedulePgCoreSync();
   res.json({ ok: true });
 });
 
@@ -1260,6 +1311,7 @@ app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
     const comment = String((req.body || {}).comment ?? "");
     if (comment.length > 12000) return res.status(400).json({ error: "Комментарий слишком длинный" });
     db.prepare("UPDATE tickets SET comment = ? WHERE id = ?").run(comment, id);
+    schedulePgCoreSync();
     broadcastQueue();
     return res.json({ ok: true });
   }
@@ -1280,6 +1332,7 @@ app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
          advisor_department = NULL
        WHERE id = ?`
     ).run(qn, id);
+    schedulePgCoreSync();
     broadcastQueue();
     return res.json({ ok: true });
   }
@@ -1292,6 +1345,7 @@ app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
          started_at = COALESCE(started_at, CURRENT_TIMESTAMP)
        WHERE id = ?`
     ).run(id);
+    schedulePgCoreSync();
     broadcastQueue();
     return res.json({ ok: true });
   }
@@ -1306,6 +1360,7 @@ app.post("/api/stats/event", (req, res) => {
     event_type.slice(0, 80),
     meta !== undefined ? JSON.stringify(meta) : null
   );
+  schedulePgCoreSync();
   res.json({ ok: true });
 });
 
@@ -1776,13 +1831,36 @@ if (NODE_ENV === "production") {
 const onListen = () => {
   console.log(`uni-q server listening on port ${PORT} (${NODE_ENV})`);
   console.log(`SQLite (очередь и талоны): ${path.resolve(SQLITE_PATH)}`);
+  if (isPgCoreEnabled()) {
+    console.log("PostgreSQL (core data mirror + restore): ON");
+  }
   if (isPgHistoryEnabled()) {
     console.log(`PostgreSQL (история визитов ticket_visit_log): ON, UNIQ_REPORT_TZ=${reportTzLabel()}`);
   }
 };
-if (NODE_ENV === "production") {
-  httpServer.listen(PORT, "0.0.0.0", onListen);
-} else {
-  httpServer.listen(PORT, onListen);
+
+async function bootstrapPersistence() {
+  if (!isPgCoreEnabled()) return;
+  try {
+    const hasRemote = await pgCoreHasData();
+    if (hasRemote) {
+      await pgRestoreCoreToSqlite(db);
+      console.log("[pg core] restored SQLite snapshot from PostgreSQL");
+    } else {
+      await pgSyncCoreFromSqlite(db);
+      console.log("[pg core] pushed initial SQLite snapshot to PostgreSQL");
+    }
+  } catch (e) {
+    console.error("[pg core bootstrap]", e);
+  }
 }
+
+void (async () => {
+  await bootstrapPersistence();
+  if (NODE_ENV === "production") {
+    httpServer.listen(PORT, "0.0.0.0", onListen);
+  } else {
+    httpServer.listen(PORT, onListen);
+  }
+})();
 

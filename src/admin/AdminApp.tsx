@@ -24,6 +24,7 @@ import {
   LineChart,
   Moon,
   Sun,
+  X,
 } from "lucide-react";
 import { fetchJSON, readJSON } from "../api";
 import { useI18n, type Lang } from "../i18n";
@@ -221,6 +222,7 @@ export function AdminEmployees() {
   const [createBusy, setCreateBusy] = useState(false);
   const [createErr, setCreateErr] = useState("");
   const [createOk, setCreateOk] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = async () => {
     const res = await fetchJSON("/api/admin/managers");
@@ -279,6 +281,7 @@ export function AdminEmployees() {
     setNewPassword("");
     setCreateOk(t("adminEmployeeCreated"));
     setCreateBusy(false);
+    setCreateOpen(false);
     await load();
   };
 
@@ -286,68 +289,102 @@ export function AdminEmployees() {
     <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
       <h2 className="mb-4 text-base font-black text-violet-950 dark:text-white">{t("adminStaffList")}</h2>
 
-      <form
-        onSubmit={(e) => void createEmployee(e)}
-        className="mb-8 grid gap-4 rounded-2xl border border-violet-100 bg-violet-50/50 p-4 dark:border-white/10 dark:bg-slate-900/50 md:grid-cols-2 md:p-5"
-      >
-        <h3 className="md:col-span-2 text-sm font-black text-violet-950 dark:text-white">{t("adminAddEmployee")}</h3>
-        <label className="block md:col-span-1">
-          <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-            {t("adminColFirstName")}
-          </span>
-          <input
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            autoComplete="given-name"
-            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-          />
-        </label>
-        <label className="block md:col-span-1">
-          <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-            {t("adminColLastName")}
-          </span>
-          <input
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            autoComplete="family-name"
-            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-          />
-        </label>
-        <label className="block md:col-span-1">
-          <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-            {t("adminColLogin")}
-          </span>
-          <input
-            value={newLogin}
-            onChange={(e) => setNewLogin(e.target.value)}
-            autoComplete="username"
-            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-          />
-        </label>
-        <label className="block md:col-span-1">
-          <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-            {t("adminColPassword")}
-          </span>
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            autoComplete="new-password"
-            className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-3 md:col-span-2">
-          <button
-            type="submit"
-            disabled={createBusy}
-            className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60"
+      <div className="mb-8 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="rounded-xl bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-950 shadow-sm transition hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-100"
+        >
+          {t("adminAddEmployee")}
+        </button>
+        {createOpen && createErr ? <span className="text-sm font-semibold text-rose-600">{createErr}</span> : null}
+      </div>
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-2xl rounded-2xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-900/20 dark:border-white/10 dark:bg-slate-950 md:p-6"
           >
-            {createBusy ? t("loading") : t("adminEmployeeCreate")}
-          </button>
-          {createErr ? <span className="text-sm font-semibold text-rose-600">{createErr}</span> : null}
-          {createOk ? <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{createOk}</span> : null}
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-black text-violet-950 dark:text-white">{t("adminAddEmployee")}</h3>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-200 bg-white/70 text-violet-900 transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-violet-100"
+                aria-label="Close"
+                title="Close"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => void createEmployee(e)}
+              className="grid gap-4 md:grid-cols-2"
+            >
+              <label className="block">
+                <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                  {t("adminColFirstName")}
+                </span>
+                <input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  autoComplete="given-name"
+                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                  {t("adminColLastName")}
+                </span>
+                <input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  autoComplete="family-name"
+                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                  {t("adminColLogin")}
+                </span>
+                <input
+                  value={newLogin}
+                  onChange={(e) => setNewLogin(e.target.value)}
+                  autoComplete="username"
+                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                  {t("adminColPassword")}
+                </span>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3 md:col-span-2">
+                <button
+                  type="submit"
+                  disabled={createBusy}
+                  className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60"
+                >
+                  {createBusy ? t("loading") : t("adminEmployeeCreate")}
+                </button>
+                {createErr ? <span className="text-sm font-semibold text-rose-600">{createErr}</span> : null}
+                {createOk ? <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{createOk}</span> : null}
+              </div>
+            </form>
+          </div>
         </div>
-      </form>
+      )}
 
       {err && <div className="mb-3 text-sm font-semibold text-rose-600">{err}</div>}
       {!rows ? (
