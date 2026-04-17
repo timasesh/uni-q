@@ -427,6 +427,13 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     ),
   ]);
 
+  const localAdvisorCount = Number((db.prepare("SELECT COUNT(*) AS c FROM advisors").get() as any)?.c || 0);
+  const localAdminCount = Number((db.prepare("SELECT COUNT(*) AS c FROM admin_users").get() as any)?.c || 0);
+  // Safety: do not wipe local users if remote snapshot lacks them.
+  // This prevents "employees disappear after deploy restart" when PostgreSQL has tickets/stats but empty advisors/admins.
+  const shouldRestoreAdvisors = advisors.rows.length > 0 || localAdvisorCount === 0;
+  const shouldRestoreAdmins = adminUsers.rows.length > 0 || localAdminCount === 0;
+
   const tx = db.transaction(() => {
     db.prepare("DELETE FROM ticket_reviews").run();
     db.prepare("DELETE FROM stats_events").run();
@@ -434,21 +441,25 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     db.prepare("DELETE FROM advisor_work_totals").run();
     db.prepare("DELETE FROM ticket_visit_log").run();
     db.prepare("DELETE FROM tickets").run();
-    db.prepare("DELETE FROM admin_users").run();
-    db.prepare("DELETE FROM advisors").run();
+    if (shouldRestoreAdmins) db.prepare("DELETE FROM admin_users").run();
+    if (shouldRestoreAdvisors) db.prepare("DELETE FROM advisors").run();
     db.prepare("DELETE FROM queue_session").run();
 
     for (const r of queueSession.rows) {
       db.prepare("INSERT INTO queue_session (id, is_active, created_at) VALUES (?, ?, ?)").run(r.id, r.is_active, r.created_at);
     }
-    for (const r of advisors.rows) {
-      db.prepare(
-        `INSERT INTO advisors (id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, reception_open)
-         VALUES (@id, @name, @faculty, @department, @desk_number, @login, @password_hash, @assigned_schools_json, @assigned_language, @assigned_languages_json, @assigned_courses_json, @assigned_specialties_json, @reception_open)`
-      ).run(r as any);
+    if (shouldRestoreAdvisors) {
+      for (const r of advisors.rows) {
+        db.prepare(
+          `INSERT INTO advisors (id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, reception_open)
+           VALUES (@id, @name, @faculty, @department, @desk_number, @login, @password_hash, @assigned_schools_json, @assigned_language, @assigned_languages_json, @assigned_courses_json, @assigned_specialties_json, @reception_open)`
+        ).run(r as any);
+      }
     }
-    for (const r of adminUsers.rows) {
-      db.prepare("INSERT INTO admin_users (id, login, password_hash, name) VALUES (?, ?, ?, ?)").run(r.id, r.login, r.password_hash, r.name);
+    if (shouldRestoreAdmins) {
+      for (const r of adminUsers.rows) {
+        db.prepare("INSERT INTO admin_users (id, login, password_hash, name) VALUES (?, ?, ?, ?)").run(r.id, r.login, r.password_hash, r.name);
+      }
     }
     for (const r of workTotals.rows) {
       db.prepare("INSERT INTO advisor_work_totals (advisor_id, total_ms, updated_at) VALUES (?, ?, ?)").run(r.advisor_id, r.total_ms, r.updated_at);
