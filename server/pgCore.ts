@@ -278,6 +278,18 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
     ),
   };
 
+  const hasAny =
+    snapshot.advisors.length > 0 ||
+    snapshot.admin_users.length > 0 ||
+    snapshot.tickets.length > 0 ||
+    snapshot.ticket_reviews.length > 0 ||
+    snapshot.stats_events.length > 0 ||
+    snapshot.ticket_visit_log.length > 0;
+  if (!hasAny) {
+    // Safety: never wipe remote core DB from an empty / ephemeral SQLite.
+    return;
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

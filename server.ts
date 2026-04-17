@@ -46,9 +46,20 @@ const PORT = Number(process.env.PORT || 5174);
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
 const NODE_ENV = process.env.NODE_ENV || "development";
-/** Все данные приложения — один файл SQLite (локально: папка `data/` в корне проекта на ноутбуке). */
-const SQLITE_PATH =
-  process.env.SQLITE_PATH || path.join(process.cwd(), "data", "uni-q.sqlite");
+/** Все данные приложения — один файл SQLite. В проде предпочитаем persistent disk (например Render: /var/data). */
+function resolveSqlitePath(): string {
+  if (process.env.SQLITE_PATH?.trim()) return process.env.SQLITE_PATH.trim();
+  if (NODE_ENV === "production") {
+    try {
+      const renderDisk = "/var/data";
+      if (fs.existsSync(renderDisk)) return path.join(renderDisk, "uni-q.sqlite");
+    } catch {
+      // ignore
+    }
+  }
+  return path.join(process.cwd(), "data", "uni-q.sqlite");
+}
+const SQLITE_PATH = resolveSqlitePath();
 
 const app = express();
 if (process.env.TRUST_PROXY === "1" || NODE_ENV === "production") {
