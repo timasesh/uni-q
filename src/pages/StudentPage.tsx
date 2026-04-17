@@ -680,7 +680,7 @@ export default function StudentPage() {
             >
               {SCHOOL_ENTRIES.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {t(`school_${e.id}` as "school_s0")}
+                  {e.label}
                 </option>
               ))}
             </select>
@@ -696,7 +696,7 @@ export default function StudentPage() {
               ) : (
                 specialtyOptions.map((sp) => (
                   <option key={sp.code} value={sp.code}>
-                    {t(`spec_${sp.code}` as "spec_CS")}
+                    ({sp.code}) {sp.name}
                   </option>
                 ))
               )}
