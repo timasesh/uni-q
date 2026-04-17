@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import StudentPage from "./pages/StudentPage";
+import StudentEntryPage from "./pages/StudentEntryPage";
 import FaqPage from "./pages/FaqPage";
 import ChatWidget from "./components/ChatWidget";
 import AdvisorPage from "./pages/AdvisorPage";
@@ -104,7 +105,8 @@ export default function App() {
 
       <main className="ui-shell">
         <Routes>
-          <Route path="/" element={<StudentPage />} />
+          <Route path="/" element={<StudentEntryPage />} />
+          <Route path="/student" element={<StudentPage />} />
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/advisor" element={<Navigate to="/manager" replace />} />
           <Route path="/advisor/settings" element={<Navigate to="/manager/settings" replace />} />
@@ -116,7 +118,7 @@ export default function App() {
         </Routes>
       </main>
 
-      {(loc.pathname === "/" || loc.pathname === "/faq") && <ChatWidget />}
+      {(loc.pathname === "/" || loc.pathname === "/student" || loc.pathname === "/faq") && <ChatWidget />}
     </div>
   );
 }

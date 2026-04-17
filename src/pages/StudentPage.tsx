@@ -59,6 +59,7 @@ export default function StudentPage() {
   const [reviewStars, setReviewStars] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewThanks, setReviewThanks] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [schemeOpen, setSchemeOpen] = useState(false);
   const [waitTick, setWaitTick] = useState(0);
   const schemeAutoOpenedRef = useRef<number | null>(null);
@@ -374,6 +375,10 @@ export default function StudentPage() {
 
   const submitReview = async () => {
     if (!myTicket) return;
+    if (reviewSubmitting) return;
+    setReviewSubmitting(true);
+    // close immediately for better UX; reopen on error
+    setReviewOpen(false);
     const res = await fetchJSON(`/api/tickets/${myTicket.id}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -381,12 +386,14 @@ export default function StudentPage() {
     });
     const js = (await readJSON(res).catch(() => ({}))) as { error?: string };
     if (!res.ok) {
+      setReviewSubmitting(false);
+      setReviewOpen(true);
       alert(js.error || "Не удалось отправить");
       return;
     }
     setReviewThanks(true);
-    setReviewOpen(false);
     setReviewDismissed(true);
+    setReviewSubmitting(false);
     void refreshTicket(myTicket.id);
   };
 
@@ -903,13 +910,19 @@ export default function StudentPage() {
               />
             </label>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <button type="button" className="ui-btn-primary flex-1" onClick={() => void submitReview()}>
+              <button
+                type="button"
+                className="ui-btn-primary flex-1"
+                onClick={() => void submitReview()}
+                disabled={reviewSubmitting}
+              >
                 {t("studentReviewSubmit")}
               </button>
               <button
                 type="button"
                 className="flex-1 rounded-xl border border-violet-200 py-3 text-sm font-extrabold text-violet-800 dark:border-white/20 dark:text-sky-200"
                 onClick={() => skipReview()}
+                disabled={reviewSubmitting}
               >
                 {t("studentReviewSkip")}
               </button>

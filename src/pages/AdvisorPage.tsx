@@ -912,7 +912,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
               </div>
 
               <div className="mt-5 overflow-auto rounded-2xl border border-sky-100 bg-white dark:border-white/10 dark:bg-blue-950/55">
-                <table className="min-w-[1240px] w-full text-left text-xs">
+                <table className="min-w-[1380px] w-full text-left text-xs">
                   <thead className="sticky top-0 bg-violet-50 text-violet-900 dark:bg-blue-950/70 dark:text-sky-200">
                     <tr>
                       {[
@@ -928,6 +928,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                         t("historyCategory"),
                         t("historyStatus"),
                         t("historyComment"),
+                        t("historyStudentComment"),
                         t("historyActions"),
                       ].map((h) => (
                         <th key={h} className="px-3 py-3 font-black uppercase tracking-widest text-[10px]">
@@ -987,6 +988,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                           </span>
                         </td>
                         <HistoryCommentCell text={String(r.comment || "")} t={t} />
+                        <HistoryCommentCell text={String(r.student_comment || "")} t={t} />
                         <td className="px-3 py-3 align-top">
                           {Number(r.reopen_eligible) === 1 ? (
                             <div className="flex max-w-[140px] flex-col gap-1">
@@ -1023,7 +1025,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                     ))}
                     {historyRows.length === 0 && (
                       <tr>
-                        <td colSpan={13} className="px-4 py-8 text-center text-sm font-semibold text-blue-900 dark:text-sky-300">
+                        <td colSpan={14} className="px-4 py-8 text-center text-sm font-semibold text-blue-900 dark:text-sky-300">
                           {t("historyEmpty")}
                         </td>
                       </tr>

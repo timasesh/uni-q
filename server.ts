@@ -713,8 +713,9 @@ app.patch("/api/admin/me/password", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/admin/managers", requireAdmin, (_req, res) => {
-  const today = (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
+app.get("/api/admin/managers", requireAdmin, (req, res) => {
+  const dayQ = parseYmdParam(String(req.query.day || ""));
+  const today = dayQ ?? (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
   const rows = db
     .prepare(
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number, a.login,
@@ -869,7 +870,8 @@ app.patch("/api/managers/me/work-total", requireManager, (req, res) => {
 
   const todayMs = Number((req.body || {}).todayMs);
   if (Number.isFinite(todayMs) && todayMs >= 0) {
-    const day = (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
+    const dayBody = parseYmdParam(String((req.body || {}).day || ""));
+    const day = dayBody ?? (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
     db.prepare(
       `INSERT INTO advisor_work_daily (advisor_id, day, work_ms)
        VALUES (?, ?, ?)
@@ -909,6 +911,7 @@ app.get("/api/managers/me/history", requireManager, async (req, res) => {
          l.advisor_name,
          l.advisor_desk,
          l.comment,
+         t.student_comment,
          l.case_type,
          l.is_repeat,
          CAST(ROUND((julianday(l.started_at) - julianday(l.created_at)) * 24 * 60) AS INTEGER) AS queue_wait_minutes,
@@ -935,11 +938,14 @@ app.get("/api/managers/me/history", requireManager, async (req, res) => {
   if (isPgHistoryEnabled()) {
     try {
       rows = await pgAdvisorVisitRows(advisorId, dayFilter, limit);
-      const ticketStmt = db.prepare(`SELECT status, finished_at FROM tickets WHERE id = ?`);
+      const ticketStmt = db.prepare(`SELECT status, finished_at, student_comment FROM tickets WHERE id = ?`);
       for (const r of rows) {
         const tid = Number(r.id);
-        const t = ticketStmt.get(tid) as { status?: string; finished_at?: unknown } | undefined;
+        const t = ticketStmt.get(tid) as
+          | { status?: string; finished_at?: unknown; student_comment?: unknown }
+          | undefined;
         r.reopen_eligible = reopenEligibleForLogRow(r.finished_at, t);
+        r.student_comment = t?.student_comment ?? null;
         r.queue_wait_minutes = minutesBetweenTimestamps(r.created_at, r.started_at);
         r.desk_service_minutes = minutesBetweenTimestamps(r.started_at, r.finished_at);
         r.total_minutes = minutesBetweenTimestamps(r.created_at, r.finished_at);
@@ -1587,6 +1593,45 @@ app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
       formatted_number: formatQueueNumber(Number(r.queue_number)),
       wait_minutes: Number(Number(r.wait_minutes).toFixed(2)),
     })),
+  });
+});
+
+/** Сколько визитов (DONE) по школам за период по дате завершения. */
+app.get("/api/admin/stats/schools-served", requireAdmin, (req, res) => {
+  const from = parseYmdParam(String(req.query.from || ""));
+  const to = parseYmdParam(String(req.query.to || ""));
+  if (!from || !to) return res.status(400).json({ error: "Укажите from и to в формате YYYY-MM-DD" });
+  if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
+  const format = String(req.query.format || "json").toLowerCase();
+
+  const rows = db
+    .prepare(
+      `SELECT
+         l.school AS school,
+         COUNT(*) AS count
+       FROM ticket_visit_log l
+       WHERE l.status = 'DONE'
+         AND l.finished_at IS NOT NULL
+         AND date(l.finished_at, 'localtime') >= ?
+         AND date(l.finished_at, 'localtime') <= ?
+       GROUP BY l.school
+       ORDER BY count DESC, l.school ASC`
+    )
+    .all(from, to) as any[];
+
+  if (format === "csv") {
+    const header = "school;count";
+    const lines = rows.map((r) => [r.school, r.count].map(csvCell).join(";"));
+    const csv = "\uFEFF" + [header, ...lines].join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="schools-served.csv"');
+    return res.send(csv);
+  }
+
+  res.json({
+    from,
+    to,
+    rows: rows.map((r) => ({ school: String(r.school || ""), count: Number(r.count) || 0 })),
   });
 });
 

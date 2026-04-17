@@ -3,9 +3,9 @@ import { fetchJSON, readJSON } from "../api";
 import {
   bumpTodayWorkedMs,
   getManagerWorkedMsSnapshot,
-  getTodayWorkedMsSnapshot,
   hydrateManagerWorkedFromServer,
   managerWorkStorageKeys,
+  syncManagerWorkSnapshotToServer,
 } from "../lib/advisorWorkSync";
 
 function formatWorkHm(ms: number) {
@@ -94,17 +94,26 @@ export default function ManagerWorkTimer({ managerId }: Props) {
 
   useEffect(() => {
     const sync = async () => {
-      await fetchJSON("/api/managers/me/work-total", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          totalMs: Math.floor(totalRef.current),
-          todayMs: getTodayWorkedMsSnapshot(managerId),
-        }),
-      });
+      await syncManagerWorkSnapshotToServer(managerId);
     };
     const id = window.setInterval(() => void sync(), 20_000);
     return () => clearInterval(id);
+  }, [managerId]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) return;
+      void syncManagerWorkSnapshotToServer(managerId);
+    };
+    const onPageHide = () => {
+      void syncManagerWorkSnapshotToServer(managerId);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, [managerId]);
 
   return (

@@ -222,7 +222,7 @@ export function AdminEmployees() {
   const [deleteBusyId, setDeleteBusyId] = useState<number | null>(null);
 
   const load = async () => {
-    const res = await fetchJSON("/api/admin/managers");
+    const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
     if (!res.ok) {
       setErr("Нет доступа");
       return;
@@ -235,7 +235,7 @@ export function AdminEmployees() {
   useEffect(() => {
     let c = false;
     void (async () => {
-      const res = await fetchJSON("/api/admin/managers");
+      const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
       if (!res.ok) {
         if (!c) setErr("Нет доступа");
         return;
@@ -465,7 +465,7 @@ function AdminWindows() {
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    const res = await fetchJSON("/api/admin/managers");
+    const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
     if (!res.ok) {
       setErr("Нет доступа");
       return;
@@ -478,7 +478,7 @@ function AdminWindows() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const res = await fetchJSON("/api/admin/managers");
+      const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
       if (cancelled) return;
       if (!res.ok) {
         setErr("Нет доступа");
@@ -638,7 +638,7 @@ function firstDayOfMonthYmd(): string {
 
 function AdminLoad() {
   const { t } = useI18n();
-  const [date, setDate] = useState(() => localYmdDaysAgo(1));
+  const [date, setDate] = useState(() => localYmdToday());
   const [data, setData] = useState<AdminLoadResponse | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1495,6 +1495,9 @@ type AdminWaitResponse = {
   rows: AdminWaitRow[];
 };
 
+type AdminSchoolsServedRow = { school: string; count: number };
+type AdminSchoolsServedResponse = { from: string; to: string; rows: AdminSchoolsServedRow[] };
+
 const TICKET_STATUSES = ["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"] as const;
 
 function AdminWaitStats() {
@@ -1764,6 +1767,198 @@ function AdminWaitStats() {
             )}
           </>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AdminSchoolsServedStats() {
+  const { t } = useI18n();
+  const [from, setFrom] = useState(() => firstDayOfMonthYmd());
+  const [to, setTo] = useState(() => localYmdToday());
+  const [data, setData] = useState<AdminSchoolsServedResponse | null>(null);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const qs = (csv: boolean) => {
+    const s = new URLSearchParams({ from, to });
+    if (csv) s.set("format", "csv");
+    return s;
+  };
+
+  const load = async () => {
+    setLoading(true);
+    setErr("");
+    const res = await fetchJSON(`/api/admin/stats/schools-served?${qs(false)}`);
+    if (!res.ok) {
+      const j = (await readJSON<{ error?: string }>(res).catch(() => ({}))) as { error?: string };
+      setErr(j.error || "Ошибка");
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    setData(await readJSON<AdminSchoolsServedResponse>(res));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const downloadCsv = async () => {
+    const res = await fetchJSON(`/api/admin/stats/schools-served?${qs(true)}`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "schools-served.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const rows = data?.rows ?? [];
+  const maxCount = rows.reduce((m, r) => Math.max(m, r.count), 0);
+
+  return (
+    <div className="space-y-6">
+      <NavLink
+        to="/admin/stats"
+        className="inline-flex items-center gap-2 text-sm font-extrabold text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-white"
+      >
+        ← {t("back")}
+      </NavLink>
+      <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
+        <h2 className="mb-2 text-base font-black text-violet-950 dark:text-white">{t("adminSchoolsTitle")}</h2>
+        <p className="mb-5 text-sm font-medium text-violet-700 dark:text-violet-300">{t("adminSchoolsHint")}</p>
+
+        <div className="mb-5 flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminVisitsFrom")}
+            </span>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminVisitsTo")}
+            </span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:bg-violet-500 disabled:opacity-60 dark:bg-violet-500 dark:hover:bg-violet-400"
+          >
+            {t("adminVisitsShow")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadCsv()}
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-950 shadow-sm transition hover:bg-violet-100 dark:border-white/10 dark:bg-violet-950/40 dark:text-violet-100"
+          >
+            <Download className="h-4 w-4" aria-hidden />
+            {t("adminVisitsDownloadCsv")}
+          </button>
+        </div>
+
+        <div className="mb-5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const d0 = localYmdToday();
+              setFrom(d0);
+              setTo(d0);
+            }}
+            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+          >
+            {t("adminPresetToday")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFrom(localYmdDaysAgo(6));
+              setTo(localYmdToday());
+            }}
+            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+          >
+            {t("adminPresetWeek")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFrom(firstDayOfMonthYmd());
+              setTo(localYmdToday());
+            }}
+            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+          >
+            {t("adminPresetMonth")}
+          </button>
+        </div>
+
+        {err && <div className="mb-4 text-sm font-semibold text-rose-600">{err}</div>}
+
+        {loading ? (
+          <div className="py-12 text-center text-sm font-semibold text-violet-600 dark:text-violet-300">{t("loading")}</div>
+        ) : !data || rows.length === 0 ? (
+          <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-400">{t("adminSchoolsEmpty")}</div>
+        ) : (
+          <>
+            <div className="mb-6 overflow-x-auto rounded-xl border border-violet-100 dark:border-white/10">
+              <table className="min-w-[420px] w-full text-left text-sm">
+                <thead className="bg-violet-50 text-violet-900 dark:bg-slate-900 dark:text-violet-200">
+                  <tr>
+                    <th className="px-3 py-2.5 font-black uppercase tracking-wider text-[10px]">{t("adminSchoolsColSchool")}</th>
+                    <th className="px-3 py-2.5 font-black uppercase tracking-wider text-[10px]">{t("adminSchoolsColCount")}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-violet-100 dark:divide-white/10">
+                  {rows.map((r) => (
+                    <tr key={r.school} className="bg-white dark:bg-slate-950/50">
+                      <td className="px-3 py-2 text-violet-800 dark:text-violet-200">{r.school}</td>
+                      <td className="px-3 py-2 font-bold tabular-nums text-violet-950 dark:text-white">{r.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div role="img" aria-label={t("adminSchoolsChartAria")} className="space-y-2">
+              {rows.map((r) => {
+                const pct = maxCount > 0 ? (r.count / maxCount) * 100 : 0;
+                return (
+                  <div key={r.school} className="flex items-center gap-3">
+                    <div className="w-48 max-w-[40%] truncate text-xs font-semibold text-violet-800 dark:text-violet-200" title={r.school}>
+                      {r.school}
+                    </div>
+                    <div className="relative h-8 flex-1 overflow-hidden rounded-xl border border-violet-100 bg-violet-50 dark:border-white/10 dark:bg-slate-900/60">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 shadow-sm dark:from-sky-700 dark:to-blue-600"
+                        style={{ width: `${Math.max(2, pct)}%` }}
+                        title={`${r.school}: ${r.count}`}
+                      />
+                      <div className="relative z-10 flex h-full items-center justify-end px-3 text-xs font-black tabular-nums text-violet-950 dark:text-white">
+                        {r.count}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2060,6 +2255,14 @@ function AdminStats() {
       linkTo: "/admin/stats/wait",
     },
     {
+      icon: LineChart,
+      title: t("adminStatSchools"),
+      desc: t("adminStatSchoolsDesc"),
+      metric: "—",
+      accent: "from-sky-500 to-indigo-600",
+      linkTo: "/admin/stats/schools",
+    },
+    {
       icon: Star,
       title: t("adminStatReviews"),
       desc: t("adminStatReviewsDesc"),
@@ -2349,6 +2552,7 @@ export default function AdminApp() {
         <Route path="stats/faq" element={<AdminFaqNoQueueStats />} />
         <Route path="stats/reviews" element={<AdminReviewsExport />} />
         <Route path="stats/wait" element={<AdminWaitStats />} />
+        <Route path="stats/schools" element={<AdminSchoolsServedStats />} />
         <Route path="stats/bookings" element={<AdminBookingsStats />} />
         <Route path="load" element={<AdminLoad />} />
         <Route path="windows" element={<AdminWindows />} />

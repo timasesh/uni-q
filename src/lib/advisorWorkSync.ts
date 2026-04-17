@@ -45,6 +45,12 @@ export function bumpTodayWorkedMs(managerId: number, deltaMs: number): void {
   localStorage.setItem(mk, String(cur + Math.floor(deltaMs)));
 }
 
+export function getTodayWorkDayKey(managerId: number): string {
+  ensureTodayBucket(managerId);
+  const dk = `uniq.manager.workTodayDate.${managerId}`;
+  return localStorage.getItem(dk) || todayDateKeyLocal();
+}
+
 /** Текущий накопленный интервал: сохранённые ms + незакрытый сегмент (если есть). */
 export function getManagerWorkedMsSnapshot(managerId: number): number {
   const { worked: wk, segment: sk } = managerWorkStorageKeys(managerId);
@@ -75,10 +81,24 @@ export function mergeOpenWorkSegmentIntoStorage(managerId: number): number {
 export async function syncManagerWorkTotalToServer(managerId: number): Promise<boolean> {
   const totalMs = mergeOpenWorkSegmentIntoStorage(managerId);
   const todayMs = getTodayWorkedMsSnapshot(managerId);
+  const day = getTodayWorkDayKey(managerId);
   const res = await fetchJSON("/api/managers/me/work-total", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ totalMs: Math.floor(totalMs), todayMs }),
+    body: JSON.stringify({ totalMs: Math.floor(totalMs), todayMs, day }),
+  });
+  return res.ok;
+}
+
+/** Синхронизация без закрытия текущего сегмента (подходит для фоновых таймеров). */
+export async function syncManagerWorkSnapshotToServer(managerId: number): Promise<boolean> {
+  const totalMs = getManagerWorkedMsSnapshot(managerId);
+  const todayMs = getTodayWorkedMsSnapshot(managerId);
+  const day = getTodayWorkDayKey(managerId);
+  const res = await fetchJSON("/api/managers/me/work-total", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ totalMs: Math.floor(totalMs), todayMs, day }),
   });
   return res.ok;
 }
