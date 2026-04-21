@@ -283,6 +283,7 @@ function ensureSeed() {
   if (!s) db.prepare("INSERT INTO queue_session (id, is_active) VALUES (1, 1)").run();
 }
 ensureSeed();
+migrateDb();
 
 function ensureAdminSeed() {
   const ensureAdmin = (login: string, password: string, name: string) => {
@@ -326,7 +327,6 @@ function ensureManagerSeed() {
   ensureManager("a.zhauynger@almau.edu.kz", "almau2026", "Жауынгер Әлия");
 }
 ensureManagerSeed();
-migrateDb();
 
 let pgCoreSyncTimer: NodeJS.Timeout | null = null;
 let pgCoreSyncRunning = false;
