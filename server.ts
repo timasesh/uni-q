@@ -42,6 +42,14 @@ type AdvisorScope = {
   assigned_specialties_json: string | null; // JSON array
 };
 
+type StudentSession = {
+  oid?: string | null;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;
+};
+
 const PORT = Number(process.env.PORT || 5174);
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
@@ -297,6 +305,27 @@ function ensureAdminSeed() {
   ensureAdmin("S.Mussa@almau.edu.kz", "admin2026", "Мұса Самал");
 }
 ensureAdminSeed();
+
+function ensureManagerSeed() {
+  const ensureManager = (login: string, password: string, name: string) => {
+    const has = db.prepare("SELECT 1 as ok FROM advisors WHERE login = ?").get(login) as { ok: 1 } | undefined;
+    if (has) return;
+    db.prepare(
+      `INSERT INTO advisors (
+         name, faculty, department, desk_number, login, password_hash,
+         assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json,
+         reception_open
+       ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, 1)`
+    ).run(name, login, bcrypt.hashSync(password, 10));
+  };
+
+  // Seed AlmaU managers (login = email). Passwords can be changed later in admin panel if needed.
+  ensureManager("d.aubakirova@almau.edu.kz", "almau2026", "Аубакирова Дамира");
+  ensureManager("s.kussainova@almau.edu.kz", "almau2026", "Кусайнова Шолпан");
+  ensureManager("a.omar@almau.edu.kz", "almau2026", "Омар Айдана");
+  ensureManager("a.zhauynger@almau.edu.kz", "almau2026", "Жауынгер Әлия");
+}
+ensureManagerSeed();
 migrateDb();
 
 let pgCoreSyncTimer: NodeJS.Timeout | null = null;
@@ -489,6 +518,11 @@ function pickRouteAdvisorIdForTicket(ticket: any, advisorRows: any[]): number | 
 }
 
 function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
+  const norm = (s: unknown) =>
+    String(s ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
   let schools: string[] = [];
   let langs: string[] | null = null;
   let courses: number[] = [1, 2, 3, 4];
@@ -519,7 +553,10 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
 
   if (schools.length > 0) {
     const school = String(ticket.school || ticket.faculty || "");
-    if (!school || !schools.includes(school)) return false;
+    if (!school) return false;
+    const schoolN = norm(school);
+    const allowed = new Set(schools.map((x) => norm(x)));
+    if (!allowed.has(schoolN)) return false;
   }
   if (langs && langs.length > 0) {
     const lang = String(ticket.language_section || "").toLowerCase();
@@ -654,6 +691,148 @@ app.post("/api/registration/check", (req, res) => {
     course: String(course || ""),
   });
   res.json(result);
+});
+
+function base64UrlDecodeToString(input: string): string {
+  const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
+  const b64 = (input + pad).replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(b64, "base64").toString("utf8");
+}
+
+function parseJwtPayload(token: string): any | null {
+  const parts = String(token || "").split(".");
+  if (parts.length < 2) return null;
+  try {
+    return JSON.parse(base64UrlDecodeToString(parts[1]!));
+  } catch {
+    return null;
+  }
+}
+
+function splitName(full: string): { firstName: string; lastName: string } {
+  const s = String(full || "").trim().replace(/\s+/g, " ");
+  if (!s) return { firstName: "", lastName: "" };
+  const parts = s.split(" ");
+  if (parts.length === 1) return { firstName: parts[0]!, lastName: "" };
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
+}
+
+function microsoftOAuthConfig() {
+  const tenant = String(process.env.MS_TENANT_ID || "common").trim() || "common";
+  const clientId = String(process.env.MS_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.MS_CLIENT_SECRET || "").trim();
+  const redirectUri = String(process.env.MS_REDIRECT_URI || `${WEB_ORIGIN}/api/auth/microsoft/callback`).trim();
+  return { tenant, clientId, clientSecret, redirectUri };
+}
+
+app.get("/api/auth/microsoft/start", (req, res) => {
+  const { tenant, clientId, redirectUri } = microsoftOAuthConfig();
+  if (!clientId) return res.status(500).send("MS_CLIENT_ID is not configured");
+
+  const state = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  (req.session as any).msState = state;
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: "code",
+    redirect_uri: redirectUri,
+    response_mode: "query",
+    scope: "openid profile email User.Read",
+    state,
+  });
+  const authUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize?${params.toString()}`;
+  res.redirect(authUrl);
+});
+
+app.get("/api/auth/microsoft/callback", async (req, res) => {
+  const code = String(req.query.code || "");
+  const state = String(req.query.state || "");
+  const expectedState = String((req.session as any).msState || "");
+  delete (req.session as any).msState;
+
+  if (!code) return res.redirect(`${WEB_ORIGIN}/student?ms=error`);
+  if (!state || !expectedState || state !== expectedState) return res.redirect(`${WEB_ORIGIN}/student?ms=state`);
+
+  const { tenant, clientId, clientSecret, redirectUri } = microsoftOAuthConfig();
+  if (!clientId || !clientSecret) return res.redirect(`${WEB_ORIGIN}/student?ms=cfg`);
+
+  try {
+    const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
+    const form = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirectUri,
+      scope: "openid profile email User.Read",
+    });
+    const tokenRes = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    const tokenText = await tokenRes.text();
+    const tokenJson = tokenText ? JSON.parse(tokenText) : {};
+    if (!tokenRes.ok) {
+      console.error("[ms oauth token]", tokenRes.status, tokenJson);
+      return res.redirect(`${WEB_ORIGIN}/student?ms=token`);
+    }
+
+    const idToken = String(tokenJson.id_token || "");
+    const accessToken = String(tokenJson.access_token || "");
+    const payload = idToken ? parseJwtPayload(idToken) : null;
+
+    let firstName = String(payload?.given_name || "");
+    let lastName = String(payload?.family_name || "");
+    const displayName = String(payload?.name || "");
+    const email = String(payload?.preferred_username || payload?.email || "");
+    const oid = String(payload?.oid || payload?.sub || "");
+
+    if ((!firstName || !lastName) && displayName) {
+      const sp = splitName(displayName);
+      firstName = firstName || sp.firstName;
+      lastName = lastName || sp.lastName;
+    }
+
+    if ((!firstName || !lastName) && accessToken) {
+      try {
+        const meRes = await fetch("https://graph.microsoft.com/v1.0/me", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const me = (await meRes.json().catch(() => null)) as any;
+        if (meRes.ok && me) {
+          firstName = firstName || String(me.givenName || "");
+          lastName = lastName || String(me.surname || "");
+        }
+      } catch (e) {
+        console.warn("[ms graph /me]", e);
+      }
+    }
+
+    const student: StudentSession = {
+      oid: oid || null,
+      email: email || null,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      name: displayName || null,
+    };
+    (req.session as any).student = student;
+    return res.redirect(`${WEB_ORIGIN}/student?ms=ok`);
+  } catch (e) {
+    console.error("[ms oauth callback]", e);
+    return res.redirect(`${WEB_ORIGIN}/student?ms=error`);
+  }
+});
+
+app.post("/api/auth/microsoft/logout", (req, res) => {
+  delete (req.session as any).student;
+  res.json({ ok: true });
+});
+
+app.get("/api/student/me", (req, res) => {
+  const student = ((req.session as any).student || null) as StudentSession | null;
+  if (!student) return res.json({ ok: true, student: null });
+  res.json({ ok: true, student });
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -2010,12 +2189,23 @@ async function bootstrapPersistence() {
   try {
     await ensurePgCoreSchema();
     const hasRemote = await pgCoreHasData();
-    if (hasRemote) {
+    const localChecks = [
+      Number((db.prepare("SELECT COUNT(*) AS c FROM advisors").get() as any)?.c || 0),
+      Number((db.prepare("SELECT COUNT(*) AS c FROM tickets").get() as any)?.c || 0),
+      Number((db.prepare("SELECT COUNT(*) AS c FROM admin_users").get() as any)?.c || 0),
+      Number((db.prepare("SELECT COUNT(*) AS c FROM stats_events").get() as any)?.c || 0),
+    ];
+    const localHasData = localChecks.some((n) => Number(n) > 0);
+
+    // Preferred behavior:
+    // - If local SQLite already has data, keep it as source-of-truth and push to PostgreSQL.
+    // - Only restore from PostgreSQL when local DB is empty (new disk / first deploy).
+    if (hasRemote && !localHasData) {
       await pgRestoreCoreToSqlite(db);
       console.log("[pg core] restored SQLite snapshot from PostgreSQL");
     } else {
       await pgSyncCoreFromSqlite(db);
-      console.log("[pg core] pushed initial SQLite snapshot to PostgreSQL");
+      console.log(hasRemote ? "[pg core] synced local SQLite snapshot to PostgreSQL" : "[pg core] pushed initial SQLite snapshot to PostgreSQL");
     }
   } catch (e) {
     console.error("[pg core bootstrap]", e);
@@ -2024,6 +2214,10 @@ async function bootstrapPersistence() {
 
 void (async () => {
   await bootstrapPersistence();
+  // Ensure core users exist even if DB was empty/restored.
+  ensureAdminSeed();
+  ensureManagerSeed();
+  schedulePgCoreSync();
   if (NODE_ENV === "production") {
     httpServer.listen(PORT, "0.0.0.0", onListen);
   } else {

@@ -26,7 +26,9 @@ export default function StudentEntryPage() {
         <button
           type="button"
           className="rounded-xl border-2 border-slate-200 bg-white py-3.5 text-sm font-extrabold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/15 dark:bg-slate-900 dark:text-sky-100 dark:hover:bg-white/10"
-          onClick={() => alert(t("studentEntryMicrosoftStub"))}
+          onClick={() => {
+            window.location.href = "/api/auth/microsoft/start";
+          }}
         >
           {t("studentEntryMicrosoftBtn")}
         </button>

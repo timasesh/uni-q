@@ -75,6 +75,32 @@ export default function StudentPage() {
     course: "1",
   });
 
+  useEffect(() => {
+    // Optional: hydrate student name from Microsoft session (if any).
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchJSON("/api/student/me");
+        if (!res.ok) return;
+        const js = await readJSON<{ ok: boolean; student: { firstName?: string | null; lastName?: string | null } | null }>(res);
+        if (cancelled) return;
+        const st = js?.student;
+        if (st?.firstName || st?.lastName) {
+          setForm((p) => ({
+            ...p,
+            firstName: p.firstName || String(st.firstName || ""),
+            lastName: p.lastName || String(st.lastName || ""),
+          }));
+        }
+      } finally {
+        // no-op
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const schoolApi = schoolApiNameById(form.schoolId) ?? SCHOOL_ENTRIES[0]?.apiName ?? "";
   const specialtyOptions = useMemo(() => specialtiesForSchool(schoolApi), [schoolApi]);
 
