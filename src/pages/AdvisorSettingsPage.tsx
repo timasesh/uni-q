@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { fetchJSON, readJSON } from "../api";
 import type { Advisor } from "../types";
@@ -34,6 +34,12 @@ export default function AdvisorSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNext, setPwNext] = useState("");
+  const [pwNext2, setPwNext2] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState("");
+  const [pwShow, setPwShow] = useState(false);
 
   const [schools, setSchools] = useState<string[]>([]);
   const [langs, setLangs] = useState<string[]>([]);
@@ -139,6 +145,42 @@ export default function AdvisorSettingsPage() {
     setMsg("Сохранено");
   };
 
+  const changePassword = async () => {
+    setPwMsg("");
+    if (!pwCurrent || !pwNext) {
+      setPwMsg("Укажите текущий и новый пароль");
+      return;
+    }
+    if (!pwNext2) {
+      setPwMsg("Повторите новый пароль");
+      return;
+    }
+    if (pwNext !== pwNext2) {
+      setPwMsg("Новый пароль и повтор не совпадают");
+      return;
+    }
+    if (pwNext.length < 6) {
+      setPwMsg("Новый пароль минимум 6 символов");
+      return;
+    }
+    setPwSaving(true);
+    const res = await fetchJSON("/api/managers/me/password", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNext }),
+    });
+    const js = await readJSON<any>(res).catch(() => ({}));
+    setPwSaving(false);
+    if (!res.ok) {
+      setPwMsg(js?.error || "Не удалось сменить пароль");
+      return;
+    }
+    setPwCurrent("");
+    setPwNext("");
+    setPwNext2("");
+    setPwMsg("Пароль обновлён");
+  };
+
   if (loading) {
     return (
       <div className="ui-card p-7">
@@ -213,6 +255,62 @@ export default function AdvisorSettingsPage() {
         </div>
 
         <div className="space-y-6">
+          <div className="ui-card p-6">
+            <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Безопасность</div>
+            <div className="mt-1 text-sm font-semibold text-violet-800 dark:text-sky-300">Смена пароля сотрудника</div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2 flex items-center justify-between gap-3">
+                <div className="text-xs font-semibold text-violet-700 dark:text-sky-300">Минимум 6 символов</div>
+                <button
+                  type="button"
+                  onClick={() => setPwShow((v) => !v)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs font-extrabold text-violet-900 shadow-sm transition hover:bg-violet-50 dark:border-white/10 dark:bg-slate-900 dark:text-sky-100 dark:hover:bg-white/5"
+                >
+                  {pwShow ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+                  {pwShow ? "Скрыть" : "Показать"}
+                </button>
+              </div>
+
+              <input
+                type={pwShow ? "text" : "password"}
+                className="ui-input"
+                placeholder="Текущий пароль"
+                value={pwCurrent}
+                onChange={(e) => setPwCurrent(e.target.value)}
+                autoComplete="current-password"
+              />
+              <input
+                type={pwShow ? "text" : "password"}
+                className="ui-input"
+                placeholder="Новый пароль"
+                value={pwNext}
+                onChange={(e) => setPwNext(e.target.value)}
+                autoComplete="new-password"
+              />
+              <input
+                type={pwShow ? "text" : "password"}
+                className="ui-input sm:col-span-2"
+                placeholder="Повторите новый пароль"
+                value={pwNext2}
+                onChange={(e) => setPwNext2(e.target.value)}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                disabled={pwSaving}
+                onClick={() => void changePassword()}
+                className="ui-btn-primary sm:col-span-2"
+              >
+                {pwSaving ? t("loading") : "Сменить пароль"}
+              </button>
+            </div>
+            {pwMsg && (
+              <div className={cn("mt-3 text-sm font-bold", pwMsg === "Пароль обновлён" ? "text-emerald-700" : "text-red-700")}>
+                {pwMsg}
+              </div>
+            )}
+          </div>
+
           <div className="ui-card p-6">
             <div className="flex items-start justify-between gap-3">
               <div>

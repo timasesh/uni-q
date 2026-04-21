@@ -903,6 +903,25 @@ app.patch("/api/admin/me/password", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+app.patch("/api/managers/me/password", requireManager, (req, res) => {
+  const advisorId = (req.session as any).managerId as number;
+  const { currentPassword, newPassword } = (req.body || {}) as { currentPassword?: string; newPassword?: string };
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Укажите текущий и новый пароль" });
+  if (String(newPassword).length < 6) return res.status(400).json({ error: "Новый пароль минимум 6 символов" });
+  const row = db.prepare("SELECT password_hash FROM advisors WHERE id = ?").get(advisorId) as
+    | { password_hash: string | null }
+    | undefined;
+  if (!row) return res.status(404).json({ error: "Сотрудник не найден" });
+  const ph = String(row.password_hash || "");
+  if (!ph || !bcrypt.compareSync(String(currentPassword), ph)) {
+    return res.status(400).json({ error: "Текущий пароль неверный" });
+  }
+  const hash = bcrypt.hashSync(String(newPassword), 10);
+  db.prepare("UPDATE advisors SET password_hash = ? WHERE id = ?").run(hash, advisorId);
+  schedulePgCoreSync();
+  res.json({ ok: true });
+});
+
 app.get("/api/admin/managers", requireAdmin, (req, res) => {
   const dayQ = parseYmdParam(String(req.query.day || ""));
   const today = dayQ ?? (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
