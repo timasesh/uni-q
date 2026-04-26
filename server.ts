@@ -1442,8 +1442,12 @@ app.post("/api/tickets/call-next", requireManager, (req, res) => {
   const advisorId = (req.session as any).managerId as number;
 
   const advisorRow = db
-    .prepare("SELECT id, name, desk_number, faculty, department FROM advisors WHERE id = ?")
+    .prepare(
+      "SELECT id, name, desk_number, faculty, department, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json FROM advisors WHERE id = ?"
+    )
     .get(advisorId) as any;
+  if (!advisorRow) return res.status(404).json({ error: "Сотрудник не найден" });
+  if (Number(advisorRow.reception_open) === 0) return res.status(403).json({ error: "Откройте запись студентов, чтобы вызывать" });
 
   const waiting = db
     .prepare(
@@ -1453,7 +1457,14 @@ app.post("/api/tickets/call-next", requireManager, (req, res) => {
     )
     .all() as any[];
   const now = new Date();
-  const next = waiting.find((t) => Number(t.route_advisor_id) === advisorId && bookingCallableNow(t.preferred_slot_at, now));
+  const scope: AdvisorScope = {
+    assigned_schools_json: advisorRow.assigned_schools_json ?? "[]",
+    assigned_languages_json: advisorRow.assigned_languages_json ?? null,
+    assigned_courses_json: advisorRow.assigned_courses_json ?? "[1,2,3,4]",
+    assigned_specialties_json: advisorRow.assigned_specialties_json ?? null,
+    assigned_study_years_json: advisorRow.assigned_study_years_json ?? null,
+  };
+  const next = waiting.find((t) => ticketMatchesScope(t, scope) && bookingCallableNow(t.preferred_slot_at, now));
   if (!next) {
     return res.status(404).json({
       error:
@@ -1492,9 +1503,22 @@ app.post("/api/tickets/:id/call-booked", requireManager, (req, res) => {
     return res.status(409).json({ error: "Нельзя вызвать раньше времени брони" });
   }
 
-  const routeId = Number.isFinite(Number(row.route_advisor_id)) ? Number(row.route_advisor_id) : pickRouteAdvisorIdForTicket(row, advisorsRowsForRouting());
-  if (routeId !== advisorId) {
-    return res.status(403).json({ error: "Этот талон в очереди другого менеджера по распределению зоны" });
+  const a = db
+    .prepare(
+      "SELECT reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json FROM advisors WHERE id = ?"
+    )
+    .get(advisorId) as any;
+  if (!a) return res.status(404).json({ error: "Сотрудник не найден" });
+  if (Number(a.reception_open) === 0) return res.status(403).json({ error: "Откройте запись студентов, чтобы вызывать" });
+  const scope: AdvisorScope = {
+    assigned_schools_json: a.assigned_schools_json ?? "[]",
+    assigned_languages_json: a.assigned_languages_json ?? null,
+    assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
+    assigned_specialties_json: a.assigned_specialties_json ?? null,
+    assigned_study_years_json: a.assigned_study_years_json ?? null,
+  };
+  if (!ticketMatchesScope(row, scope)) {
+    return res.status(403).json({ error: "Этот талон не относится к вашей зоне приёма" });
   }
 
   const advisorRow = db
