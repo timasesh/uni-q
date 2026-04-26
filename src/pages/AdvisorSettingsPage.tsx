@@ -45,6 +45,7 @@ export default function AdvisorSettingsPage() {
   const [langs, setLangs] = useState<string[]>([]);
   const [courses, setCourses] = useState<number[]>([1, 2, 3, 4]);
   const [specialtyCodes, setSpecialtyCodes] = useState<string[]>([]);
+  const [studyYears, setStudyYears] = useState<number[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -65,6 +66,11 @@ export default function AdvisorSettingsPage() {
         .filter((n) => n >= 1 && n <= 4);
       setCourses(cs.length > 0 ? cs : [1, 2, 3, 4]);
       setSpecialtyCodes(safeParseArray<string>(js.assigned_specialties_json).map((x) => String(x)));
+      setStudyYears(
+        safeParseArray<number>(js.assigned_study_years_json)
+          .map((x) => Number(x))
+          .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8)
+      );
       setLoading(false);
     })();
   }, []);
@@ -78,6 +84,7 @@ export default function AdvisorSettingsPage() {
   const langSet = useMemo(() => new Set(langs), [langs]);
   const courseSet = useMemo(() => new Set(courses), [courses]);
   const specSet = useMemo(() => new Set(specialtyCodes), [specialtyCodes]);
+  const studyYearSet = useMemo(() => new Set(studyYears), [studyYears]);
 
   const specialtiesForSelectedSchools = useMemo(() => {
     const out: { code: string; label: string }[] = [];
@@ -115,6 +122,9 @@ export default function AdvisorSettingsPage() {
   const toggleSpecialty = (code: string) => {
     setSpecialtyCodes((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code].sort()));
   };
+  const toggleStudyYear = (n: number) => {
+    setStudyYears((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b)));
+  };
 
   const save = async () => {
     setMsg("");
@@ -131,6 +141,7 @@ export default function AdvisorSettingsPage() {
         assigned_languages_json: langs,
         assigned_courses_json: courses,
         assigned_specialties_json: specialtyCodes,
+        assigned_study_years_json: studyYears,
       }),
     });
     const js = await readJSON<any>(res);
@@ -142,6 +153,11 @@ export default function AdvisorSettingsPage() {
     const next = js as Advisor;
     setMe(next);
     setSpecialtyCodes(safeParseArray<string>(next.assigned_specialties_json).map((x) => String(x)));
+    setStudyYears(
+      safeParseArray<number>(next.assigned_study_years_json)
+        .map((x) => Number(x))
+        .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8)
+    );
     setMsg("Сохранено");
   };
 
@@ -360,6 +376,43 @@ export default function AdvisorSettingsPage() {
                   )}
                 >
                   {n} курс
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="ui-card p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">
+                  ТиПО: срок обучения
+                </div>
+                <div className="mt-1 text-sm font-semibold text-violet-800 dark:text-sky-300">
+                  Если ничего не выбрано — любой срок.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStudyYears([])}
+                className="ui-btn-ghost px-3 py-2 text-xs"
+              >
+                Любой
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[2, 3].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => toggleStudyYear(n)}
+                  className={cn(
+                    "rounded-2xl border-2 px-4 py-3 text-sm font-extrabold shadow-sm transition",
+                    studyYearSet.has(n)
+                      ? "border-emerald-400 bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-300/90 dark:border-emerald-300 dark:bg-emerald-500 dark:text-white dark:shadow-emerald-500/50 dark:ring-emerald-400"
+                      : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
+                  )}
+                >
+                  {n} года
                 </button>
               ))}
             </div>

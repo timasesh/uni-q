@@ -40,6 +40,7 @@ type AdvisorScope = {
   assigned_languages_json: string | null; // JSON array, null/[] => any
   assigned_courses_json: string; // JSON array
   assigned_specialties_json: string | null; // JSON array
+  assigned_study_years_json: string | null; // JSON array, null/[] => any
 };
 
 type StudentSession = {
@@ -136,7 +137,8 @@ CREATE TABLE IF NOT EXISTS advisors (
   assigned_language TEXT,
   assigned_languages_json TEXT,
   assigned_courses_json TEXT,
-  assigned_specialties_json TEXT
+  assigned_specialties_json TEXT,
+  assigned_study_years_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tickets (
@@ -150,11 +152,13 @@ CREATE TABLE IF NOT EXISTS tickets (
   specialty_code TEXT,
   language_section TEXT,
   course TEXT,
+  study_duration_years INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   called_at TEXT,
   started_at TEXT,
   finished_at TEXT,
   advisor_id INTEGER,
+  route_advisor_id INTEGER,
   advisor_name TEXT,
   advisor_desk TEXT,
   advisor_faculty TEXT,
@@ -213,10 +217,19 @@ function migrateDb() {
   if (!ticketNames.has("student_comment")) {
     db.exec("ALTER TABLE tickets ADD COLUMN student_comment TEXT");
   }
+  if (!ticketNames.has("study_duration_years")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN study_duration_years INTEGER");
+  }
+  if (!ticketNames.has("route_advisor_id")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN route_advisor_id INTEGER");
+  }
   const advisorCols = db.prepare("PRAGMA table_info(advisors)").all() as { name: string }[];
   const advisorNames = new Set(advisorCols.map((c) => c.name));
   if (!advisorNames.has("reception_open")) {
     db.exec("ALTER TABLE advisors ADD COLUMN reception_open INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!advisorNames.has("assigned_study_years_json")) {
+    db.exec("ALTER TABLE advisors ADD COLUMN assigned_study_years_json TEXT");
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS advisor_work_daily (
@@ -314,9 +327,9 @@ function ensureManagerSeed() {
     db.prepare(
       `INSERT INTO advisors (
          name, faculty, department, desk_number, login, password_hash,
-         assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json,
+         assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json,
          reception_open
-       ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, 1)`
+       ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, NULL, 1)`
     ).run(name, login, bcrypt.hashSync(password, 10));
   };
 
@@ -489,6 +502,7 @@ function advisorsRowsForRouting(): any[] {
   return db
     .prepare(
       `SELECT id, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json
+              , assigned_study_years_json
        FROM advisors`
     )
     .all() as any[];
@@ -508,6 +522,7 @@ function pickRouteAdvisorIdForTicket(ticket: any, advisorRows: any[]): number | 
       assigned_languages_json: a.assigned_languages_json ?? null,
       assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
       assigned_specialties_json: a.assigned_specialties_json ?? null,
+      assigned_study_years_json: a.assigned_study_years_json ?? null,
     };
     if (!ticketMatchesScope(ticket, scope)) continue;
     const id = Number(a.id);
@@ -515,6 +530,29 @@ function pickRouteAdvisorIdForTicket(ticket: any, advisorRows: any[]): number | 
     if (best === null || id < best) best = id;
   }
   return best;
+}
+
+function ensureRouteOwnersForWaitingTickets() {
+  const waiting = db.prepare("SELECT id, school, language_section, course, specialty_code, study_duration_years FROM tickets WHERE status = 'WAITING' AND route_advisor_id IS NULL").all() as any[];
+  if (waiting.length === 0) return;
+  const advisors = advisorsRowsForRouting();
+  const upd = db.prepare("UPDATE tickets SET route_advisor_id = ? WHERE id = ?");
+  for (const t of waiting) {
+    const rid = pickRouteAdvisorIdForTicket(t, advisors);
+    upd.run(rid, t.id);
+  }
+}
+
+function recomputeRouteOwnersForWaitingTickets() {
+  const waiting = db
+    .prepare("SELECT id, school, language_section, course, specialty_code, study_duration_years FROM tickets WHERE status = 'WAITING'")
+    .all() as any[];
+  const advisors = advisorsRowsForRouting();
+  const upd = db.prepare("UPDATE tickets SET route_advisor_id = ? WHERE id = ?");
+  for (const t of waiting) {
+    const rid = pickRouteAdvisorIdForTicket(t, advisors);
+    upd.run(rid, t.id);
+  }
 }
 
 function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
@@ -527,6 +565,7 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   let langs: string[] | null = null;
   let courses: number[] = [1, 2, 3, 4];
   let specs: string[] | null = null;
+  let studyYears: number[] | null = null;
   try {
     schools = JSON.parse(scope.assigned_schools_json || "[]");
   } catch {
@@ -550,6 +589,15 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   } catch {
     specs = null;
   }
+  try {
+    const y = scope.assigned_study_years_json ? JSON.parse(scope.assigned_study_years_json) : null;
+    if (Array.isArray(y) && y.length > 0) {
+      const ys = y.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
+      if (ys.length > 0) studyYears = ys;
+    }
+  } catch {
+    studyYears = null;
+  }
 
   if (schools.length > 0) {
     const school = String(ticket.school || ticket.faculty || "");
@@ -568,6 +616,10 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
     const code = String(ticket.specialty_code || "");
     if (!code || !specs.includes(code)) return false;
   }
+  if (studyYears && studyYears.length > 0) {
+    const dur = Number(ticket.study_duration_years);
+    if (!Number.isFinite(dur) || !studyYears.includes(dur)) return false;
+  }
   return true;
 }
 
@@ -577,16 +629,18 @@ function registrationOpenForStudent(body: {
   language_section?: string;
   course?: string;
   specialty_code?: string;
+  study_duration_years?: number | string;
 }): { open: boolean; matchesAny: boolean } {
   const pseudo = {
     school: String(body.school || "").trim(),
     language_section: String(body.language_section || "").trim(),
     course: String(body.course || "").trim(),
     specialty_code: String(body.specialty_code || "").trim(),
+    study_duration_years: Number(body.study_duration_years),
   };
   const advisors = db
     .prepare(
-      `SELECT id, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json
+      `SELECT id, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json
        FROM advisors`
     )
     .all() as any[];
@@ -598,6 +652,7 @@ function registrationOpenForStudent(body: {
       assigned_languages_json: a.assigned_languages_json ?? null,
       assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
       assigned_specialties_json: a.assigned_specialties_json ?? null,
+      assigned_study_years_json: a.assigned_study_years_json ?? null,
     };
     if (ticketMatchesScope(pseudo, scope)) {
       matchesAny = true;
@@ -640,7 +695,9 @@ function getLiveQueue() {
   const tickets = db
     .prepare(
       `SELECT id, queue_number, status, school, specialty, specialty_code, language_section, course,
-              advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department,
+              study_duration_years,
+              student_first_name, student_last_name,
+              advisor_id, route_advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department,
               comment, case_type, student_comment, preferred_slot_at, created_at
        FROM tickets
        WHERE status IN ('WAITING','CALLED','IN_SERVICE')
@@ -651,13 +708,12 @@ function getLiveQueue() {
     )
     .all() as any[];
 
-  const advisorRows = advisorsRowsForRouting();
   return {
     session: sessionState,
     tickets: tickets.map((t) => ({
       ...t,
       formatted_number: formatQueueNumber(t.queue_number),
-      route_advisor_id: t.status === "WAITING" ? pickRouteAdvisorIdForTicket(t, advisorRows) : null,
+      route_advisor_id: t.status === "WAITING" ? (t.route_advisor_id ?? null) : null,
     })),
   };
 }
@@ -683,12 +739,13 @@ app.post("/api/session/stop", requireManager, (_req, res) => {
 
 /** Проверка: открыта ли запись для выбранного профиля (школа · язык · курс · спец.). */
 app.post("/api/registration/check", (req, res) => {
-  const { school, specialtyCode, languageSection, course } = (req.body || {}) as Record<string, unknown>;
+  const { school, specialtyCode, languageSection, course, studyDurationYears } = (req.body || {}) as Record<string, unknown>;
   const result = registrationOpenForStudent({
     school: String(school || ""),
     specialty_code: String(specialtyCode || ""),
     language_section: String(languageSection || ""),
     course: String(course || ""),
+    study_duration_years: Number(studyDurationYears),
   });
   res.json(result);
 });
@@ -929,6 +986,7 @@ app.get("/api/admin/managers", requireAdmin, (req, res) => {
     .prepare(
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number, a.login,
               a.assigned_schools_json, a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json,
+              a.assigned_study_years_json,
               COALESCE(d.work_ms, 0) AS work_ms_today
        FROM advisors a
        LEFT JOIN advisor_work_daily d ON d.advisor_id = a.id AND d.day = ?
@@ -961,9 +1019,9 @@ app.post("/api/admin/managers", requireAdmin, (req, res) => {
     .prepare(
       `INSERT INTO advisors (
          name, faculty, department, desk_number, login, password_hash,
-         assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json,
+         assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json,
          reception_open
-       ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, 1)`
+       ) VALUES (?, NULL, NULL, NULL, ?, ?, '[]', NULL, NULL, '[1,2,3,4]', NULL, NULL, 1)`
     )
     .run(name, login, hash);
   schedulePgCoreSync();
@@ -1033,7 +1091,7 @@ app.get("/api/managers/me", requireManager, (req, res) => {
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number,
               COALESCE(a.reception_open, 1) AS reception_open,
               a.assigned_schools_json, a.assigned_language,
-              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json,
+              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json, a.assigned_study_years_json,
               COALESCE(w.total_ms, 0) AS total_work_ms
        FROM advisors a
        LEFT JOIN advisor_work_totals w ON w.advisor_id = a.id
@@ -1048,6 +1106,7 @@ app.patch("/api/managers/me/reception", requireManager, (req, res) => {
   const advisorId = (req.session as any).managerId as number;
   const open = Boolean((req.body || {}).open);
   db.prepare("UPDATE advisors SET reception_open = ? WHERE id = ?").run(open ? 1 : 0, advisorId);
+  recomputeRouteOwnersForWaitingTickets();
   schedulePgCoreSync();
   broadcastQueue();
   const row = db
@@ -1055,7 +1114,7 @@ app.patch("/api/managers/me/reception", requireManager, (req, res) => {
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number,
               COALESCE(a.reception_open, 1) AS reception_open,
               a.assigned_schools_json, a.assigned_language,
-              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json,
+              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json, a.assigned_study_years_json,
               COALESCE(w.total_ms, 0) AS total_work_ms
        FROM advisors a
        LEFT JOIN advisor_work_totals w ON w.advisor_id = a.id
@@ -1188,6 +1247,9 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
   const langs = Array.isArray(body.assigned_languages_json) ? body.assigned_languages_json.map((x: any) => String(x).toLowerCase()) : [];
   const courses = Array.isArray(body.assigned_courses_json) ? body.assigned_courses_json.map((x: any) => Number(x)).filter((n: number) => n >= 1 && n <= 4) : [1, 2, 3, 4];
   const specs = Array.isArray(body.assigned_specialties_json) ? body.assigned_specialties_json.map(String) : [];
+  const studyYears = Array.isArray(body.assigned_study_years_json)
+    ? body.assigned_study_years_json.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 8)
+    : [];
 
   if (schools.length === 0) return res.status(400).json({ error: "Выберите хотя бы одну школу" });
 
@@ -1196,20 +1258,23 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
      SET assigned_schools_json = ?,
          assigned_languages_json = ?,
          assigned_courses_json = ?,
-         assigned_specialties_json = ?
+         assigned_specialties_json = ?,
+         assigned_study_years_json = ?
      WHERE id = ?`
   ).run(
     JSON.stringify(schools),
     langs.length > 0 ? JSON.stringify(langs) : null,
     JSON.stringify(courses.length > 0 ? courses : [1, 2, 3, 4]),
     specs.length > 0 ? JSON.stringify(specs) : null,
+    studyYears.length > 0 ? JSON.stringify(studyYears) : null,
     advisorId
   );
+  recomputeRouteOwnersForWaitingTickets();
   schedulePgCoreSync();
   const row = db
     .prepare(
       `SELECT id, name, faculty, department, desk_number, assigned_schools_json, assigned_language,
-              assigned_languages_json, assigned_courses_json, assigned_specialties_json
+              assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json
        FROM advisors WHERE id = ?`
     )
     .get(advisorId);
@@ -1218,6 +1283,42 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
 });
 
 app.get("/api/queue/live", (_req, res) => res.json(getLiveQueue()));
+
+app.get("/api/admin/queues/all", requireAdmin, (_req, res) => {
+  const advisors = db
+    .prepare("SELECT id, name, desk_number FROM advisors ORDER BY id ASC")
+    .all() as { id: number; name: string; desk_number: string | null }[];
+  const byId = new Map<number, { id: number; name: string; desk_number: string | null }>();
+  for (const a of advisors) byId.set(Number(a.id), a);
+
+  const rows = db
+    .prepare(
+      `SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code,
+              language_section, course, study_duration_years, route_advisor_id, advisor_id, advisor_name, advisor_desk,
+              preferred_slot_at, created_at
+       FROM tickets
+       WHERE status IN ('WAITING','CALLED','IN_SERVICE')
+       ORDER BY
+         CASE status WHEN 'WAITING' THEN 0 WHEN 'CALLED' THEN 1 ELSE 2 END,
+         queue_number ASC`
+    )
+    .all() as any[];
+
+  const out = rows.map((r) => {
+    const routeId = Number(r.route_advisor_id);
+    const activeAdvisorId = Number(r.advisor_id);
+    const ownerId = r.status === "WAITING" ? (Number.isFinite(routeId) ? routeId : null) : Number.isFinite(activeAdvisorId) ? activeAdvisorId : null;
+    const owner = ownerId != null ? byId.get(ownerId) : undefined;
+    return {
+      ...r,
+      formatted_number: formatQueueNumber(Number(r.queue_number)),
+      owner_manager_id: owner?.id ?? null,
+      owner_manager_name: owner?.name ?? r.advisor_name ?? null,
+      owner_manager_desk: owner?.desk_number ?? r.advisor_desk ?? null,
+    };
+  });
+  res.json({ rows: out });
+});
 
 app.post("/api/tickets", (req, res) => {
   const {
@@ -1228,6 +1329,7 @@ app.post("/api/tickets", (req, res) => {
     specialtyCode,
     languageSection,
     course,
+    studyDurationYears,
     preferredSlotAt,
   } = (req.body || {}) as any;
 
@@ -1236,6 +1338,7 @@ app.post("/api/tickets", (req, res) => {
     specialty_code: String(specialtyCode || ""),
     language_section: String(languageSection || ""),
     course: String(course || ""),
+    study_duration_years: Number(studyDurationYears),
   });
   if (!reg.matchesAny) {
     return res.status(409).json({ error: "Нет линии приёма для указанных данных" });
@@ -1262,10 +1365,20 @@ app.post("/api/tickets", (req, res) => {
   }
 
   const qn = nextQueueNumber();
+  const routeAdvisorId = pickRouteAdvisorIdForTicket(
+    {
+      school: String(school || "").trim(),
+      specialty_code: String(specialtyCode || "").trim(),
+      language_section: String(languageSection || "").trim(),
+      course: String(course || "").trim(),
+      study_duration_years: Number.isFinite(Number(studyDurationYears)) ? Number(studyDurationYears) : null,
+    },
+    advisorsRowsForRouting()
+  );
   const stmt = db.prepare(
     `INSERT INTO tickets
-     (queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, preferred_slot_at)
-     VALUES (@qn, 'WAITING', @fn, @ln, @school, @spec, @specCode, @lang, @course, @slot)`
+     (queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, study_duration_years, route_advisor_id, preferred_slot_at)
+     VALUES (@qn, 'WAITING', @fn, @ln, @school, @spec, @specCode, @lang, @course, @studyYears, @routeAdvisorId, @slot)`
   );
   const info = stmt.run({
     qn,
@@ -1276,12 +1389,14 @@ app.post("/api/tickets", (req, res) => {
     specCode: String(specialtyCode || "").trim(),
     lang: String(languageSection || "").trim(),
     course: String(course || "").trim(),
+    studyYears: Number.isFinite(Number(studyDurationYears)) ? Number(studyDurationYears) : null,
+    routeAdvisorId,
     slot,
   });
 
   const ticket = db
     .prepare(
-      `SELECT id, queue_number, status, school, specialty, specialty_code, language_section, course, preferred_slot_at
+      `SELECT id, queue_number, status, school, specialty, specialty_code, language_section, course, study_duration_years, route_advisor_id, preferred_slot_at
        FROM tickets WHERE id = ?`
     )
     .get(info.lastInsertRowid) as any;
@@ -1297,7 +1412,7 @@ app.get("/api/tickets/:id/status", (req, res) => {
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
   const t = db
     .prepare(
-      `SELECT t.id, t.queue_number, t.status, t.school, t.specialty, t.specialty_code, t.language_section, t.course,
+      `SELECT t.id, t.queue_number, t.status, t.school, t.specialty, t.specialty_code, t.language_section, t.course, t.study_duration_years, t.route_advisor_id,
               t.advisor_name, t.advisor_desk, t.advisor_faculty, t.advisor_department,
               t.comment, t.case_type, t.student_comment, t.preferred_slot_at, t.missed_student_note,
               CASE WHEN r.ticket_id IS NOT NULL THEN 1 ELSE 0 END AS has_review
@@ -1337,11 +1452,8 @@ app.post("/api/tickets/call-next", requireManager, (req, res) => {
                 queue_number ASC`
     )
     .all() as any[];
-  const advisorRows = advisorsRowsForRouting();
   const now = new Date();
-  const next = waiting.find(
-    (t) => pickRouteAdvisorIdForTicket(t, advisorRows) === advisorId && bookingCallableNow(t.preferred_slot_at, now)
-  );
+  const next = waiting.find((t) => Number(t.route_advisor_id) === advisorId && bookingCallableNow(t.preferred_slot_at, now));
   if (!next) {
     return res.status(404).json({
       error:
@@ -1380,7 +1492,7 @@ app.post("/api/tickets/:id/call-booked", requireManager, (req, res) => {
     return res.status(409).json({ error: "Нельзя вызвать раньше времени брони" });
   }
 
-  const routeId = pickRouteAdvisorIdForTicket(row, advisorsRowsForRouting());
+  const routeId = Number.isFinite(Number(row.route_advisor_id)) ? Number(row.route_advisor_id) : pickRouteAdvisorIdForTicket(row, advisorsRowsForRouting());
   if (routeId !== advisorId) {
     return res.status(403).json({ error: "Этот талон в очереди другого менеджера по распределению зоны" });
   }
@@ -1577,10 +1689,12 @@ app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
 
   if (action === "queue") {
     const qn = nextQueueNumber();
+    const routeAdvisorId = pickRouteAdvisorIdForTicket(row, advisorsRowsForRouting());
     db.prepare(
       `UPDATE tickets SET
          status = 'WAITING',
          queue_number = ?,
+         route_advisor_id = ?,
          called_at = NULL,
          started_at = NULL,
          finished_at = NULL,
@@ -1590,7 +1704,7 @@ app.post("/api/tickets/:id/reopen", requireManager, (req, res) => {
          advisor_faculty = NULL,
          advisor_department = NULL
        WHERE id = ?`
-    ).run(qn, id);
+    ).run(qn, routeAdvisorId, id);
     schedulePgCoreSync();
     broadcastQueue();
     return res.json({ ok: true });
@@ -1732,7 +1846,7 @@ app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
     }
   }
   if (rows.length === 0 && !count && !avgMin && !medianMin) {
-    const raw = db
+    const active = db
       .prepare(
         `SELECT
            t.id AS ticket_id,
@@ -1753,9 +1867,36 @@ app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
            END AS wait_minutes
          FROM tickets t
          WHERE date(t.created_at, 'localtime') >= ? AND date(t.created_at, 'localtime') <= ?
+           AND t.status IN ('WAITING','CALLED','IN_SERVICE')
            AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)`
       )
       .all(from, to) as any[];
+    const terminal = db
+      .prepare(
+        `SELECT
+           l.ticket_id,
+           l.queue_number,
+           l.student_first_name,
+           l.student_last_name,
+           l.school,
+           l.status,
+           l.created_at,
+           l.called_at,
+           l.started_at,
+           CASE
+             WHEN l.called_at IS NOT NULL
+               THEN (strftime('%s', l.called_at) - strftime('%s', l.created_at)) / 60.0
+             WHEN l.started_at IS NOT NULL
+               THEN (strftime('%s', l.started_at) - strftime('%s', l.created_at)) / 60.0
+             ELSE NULL
+           END AS wait_minutes
+         FROM ticket_visit_log l
+         WHERE date(l.created_at, 'localtime') >= ? AND date(l.created_at, 'localtime') <= ?
+           AND l.status IN ('DONE','MISSED','CANCELLED')
+           AND (l.called_at IS NOT NULL OR l.started_at IS NOT NULL)`
+      )
+      .all(from, to) as any[];
+    const raw = [...active, ...terminal];
     rows = raw.filter((r) => r.wait_minutes != null && Number.isFinite(Number(r.wait_minutes)) && Number(r.wait_minutes) >= 0);
     if (statusFilter && validStatuses.has(statusFilter)) rows = rows.filter((r) => r.status === statusFilter);
     if (Number.isFinite(minWait)) rows = rows.filter((r) => Number(r.wait_minutes) >= minWait);
@@ -2044,9 +2185,16 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
     rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
   }
 
+  rows = rows.map((r) => ({
+    ...r,
+    queue_wait_minutes: minutesBetweenTimestamps(r.created_at, r.started_at),
+    desk_service_minutes: minutesBetweenTimestamps(r.started_at, r.finished_at),
+    total_minutes: minutesBetweenTimestamps(r.created_at, r.finished_at),
+  }));
+
   if (format === "csv") {
     const header =
-      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;manager;desk;case_type;comment;called_at;started_at;finished_at";
+      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;manager;desk;case_type;comment;called_at;started_at;finished_at;queue_wait_min;service_min;total_min";
     const lines = rows.map((r) =>
       [
         r.ticket_id,
@@ -2067,6 +2215,9 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
         r.called_at,
         r.started_at,
         r.finished_at,
+        r.queue_wait_minutes,
+        r.desk_service_minutes,
+        r.total_minutes,
       ]
         .map(csvCell)
         .join(";")
@@ -2083,6 +2234,9 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
     rows: rows.map((r) => ({
       ...r,
       formatted_number: formatQueueNumber(Number(r.queue_number)),
+      queue_wait_minutes: Number.isFinite(r.queue_wait_minutes) ? r.queue_wait_minutes : null,
+      desk_service_minutes: Number.isFinite(r.desk_service_minutes) ? r.desk_service_minutes : null,
+      total_minutes: Number.isFinite(r.total_minutes) ? r.total_minutes : null,
     })),
   });
 });
@@ -2221,8 +2375,10 @@ async function bootstrapPersistence() {
     // - Only restore from PostgreSQL when local DB is empty (new disk / first deploy).
     if (hasRemote && !localHasData) {
       await pgRestoreCoreToSqlite(db);
+      ensureRouteOwnersForWaitingTickets();
       console.log("[pg core] restored SQLite snapshot from PostgreSQL");
     } else {
+      ensureRouteOwnersForWaitingTickets();
       await pgSyncCoreFromSqlite(db);
       console.log(hasRemote ? "[pg core] synced local SQLite snapshot to PostgreSQL" : "[pg core] pushed initial SQLite snapshot to PostgreSQL");
     }

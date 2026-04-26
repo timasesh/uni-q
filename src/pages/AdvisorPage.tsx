@@ -633,8 +633,12 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                             {tk.language_section || ""} · {tk.course || ""}
                           </div>
                         </div>
+                        <div className="text-sm font-extrabold text-violet-900 dark:text-sky-100">
+                          {String(tk.student_last_name || "").trim()} {String(tk.student_first_name || "").trim()}
+                        </div>
                         <div className="text-xs font-medium text-violet-800/90 dark:text-sky-300">
                           {tk.specialty || ""} {tk.specialty_code ? `(${tk.specialty_code})` : ""}
+                          {tk.study_duration_years ? ` · ТиПО ${tk.study_duration_years} г.` : ""}
                         </div>
                         {slot && (
                           <div className="text-[10px] font-bold text-amber-700 dark:text-amber-300">

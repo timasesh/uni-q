@@ -5,11 +5,14 @@ export type Ticket = {
   queue_number: number;
   formatted_number?: string;
   status: TicketStatus;
+  student_first_name?: string | null;
+  student_last_name?: string | null;
   school?: string | null;
   specialty?: string | null;
   specialty_code?: string | null;
   language_section?: string | null;
   course?: string | null;
+  study_duration_years?: number | null;
   advisor_id?: number | null;
   /** Для WAITING: единственный менеджер, которому показывают этот талон (детерминированный выбор при пересечении зон). */
   route_advisor_id?: number | null;
@@ -49,6 +52,7 @@ export type Advisor = {
   assigned_languages_json?: string | null;
   assigned_courses_json?: string | null;
   assigned_specialties_json?: string | null;
+  assigned_study_years_json?: string | null;
   /** Суммарное отработанное время на сервере (мс), см. advisor_work_totals */
   total_work_ms?: number;
   /** Запись в свою зону приёма (1 = открыта) */

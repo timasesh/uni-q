@@ -22,6 +22,9 @@ export function initPgCorePool(): void {
 export async function ensurePgCoreSchema(): Promise<void> {
   if (!pool) return;
   await q("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS student_comment TEXT");
+  await q("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS study_duration_years INTEGER");
+  await q("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS route_advisor_id INTEGER");
+  await q("ALTER TABLE advisors ADD COLUMN IF NOT EXISTS assigned_study_years_json TEXT");
 }
 
 async function q(sql: string, params: unknown[] = []): Promise<pg.QueryResult<any>> {
@@ -169,32 +172,52 @@ export async function pgAdminWaitTimes(
   summary: { count: number; avgMin: number; medianMin: number };
   rows: any[];
 }> {
-  const params: unknown[] = [REPORT_TZ, from, to];
-  let sql = `SELECT
-               t.id AS ticket_id,
-               t.queue_number,
-               t.student_first_name,
-               t.student_last_name,
-               t.school,
-               t.status,
-               t.created_at,
-               t.called_at,
-               t.started_at,
-               CASE
-                 WHEN t.called_at IS NOT NULL THEN EXTRACT(EPOCH FROM (t.called_at - t.created_at)) / 60.0
-                 WHEN t.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (t.started_at - t.created_at)) / 60.0
-                 ELSE NULL
-               END AS wait_minutes
-             FROM tickets t
-             WHERE (t.created_at AT TIME ZONE $1)::date >= $2::date
-               AND (t.created_at AT TIME ZONE $1)::date <= $3::date
-               AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)`;
-  if (status) {
-    params.push(status);
-    sql += ` AND t.status = $${params.length}`;
-  }
-  const { rows } = await q(sql, params);
+  const { rows } = await q(
+    `SELECT
+       t.id AS ticket_id,
+       t.queue_number,
+       t.student_first_name,
+       t.student_last_name,
+       t.school,
+       t.status,
+       t.created_at,
+       t.called_at,
+       t.started_at,
+       CASE
+         WHEN t.called_at IS NOT NULL THEN EXTRACT(EPOCH FROM (t.called_at - t.created_at)) / 60.0
+         WHEN t.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (t.started_at - t.created_at)) / 60.0
+         ELSE NULL
+       END AS wait_minutes
+     FROM tickets t
+     WHERE (t.created_at AT TIME ZONE $1)::date >= $2::date
+       AND (t.created_at AT TIME ZONE $1)::date <= $3::date
+       AND t.status IN ('WAITING','CALLED','IN_SERVICE')
+       AND (t.called_at IS NOT NULL OR t.started_at IS NOT NULL)
+     UNION ALL
+     SELECT
+       l.ticket_id AS ticket_id,
+       l.queue_number,
+       l.student_first_name,
+       l.student_last_name,
+       l.school,
+       l.status,
+       l.created_at,
+       l.called_at,
+       l.started_at,
+       CASE
+         WHEN l.called_at IS NOT NULL THEN EXTRACT(EPOCH FROM (l.called_at - l.created_at)) / 60.0
+         WHEN l.started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (l.started_at - l.created_at)) / 60.0
+         ELSE NULL
+       END AS wait_minutes
+     FROM ticket_visit_log l
+     WHERE (l.created_at AT TIME ZONE $1)::date >= $2::date
+       AND (l.created_at AT TIME ZONE $1)::date <= $3::date
+       AND l.status IN ('DONE','MISSED','CANCELLED')
+       AND (l.called_at IS NOT NULL OR l.started_at IS NOT NULL)`,
+    [REPORT_TZ, from, to]
+  );
   let filtered = rows.filter((r) => r.wait_minutes != null && Number(r.wait_minutes) >= 0);
+  if (status) filtered = filtered.filter((r) => String(r.status || "").toUpperCase() === String(status).toUpperCase());
   if (minWait != null) filtered = filtered.filter((r) => Number(r.wait_minutes) >= minWait);
   if (maxWait != null) filtered = filtered.filter((r) => Number(r.wait_minutes) <= maxWait);
   const waits = filtered.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);
@@ -249,7 +272,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
     queue_session: sqliteRows(db, "SELECT id, is_active, created_at FROM queue_session ORDER BY id ASC"),
     advisors: sqliteRows(
       db,
-      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, reception_open FROM advisors ORDER BY id ASC"
+      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, reception_open FROM advisors ORDER BY id ASC"
     ),
     admin_users: sqliteRows(db, "SELECT id, login, password_hash, name FROM admin_users ORDER BY id ASC"),
     advisor_work_totals: sqliteRows(
@@ -262,7 +285,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
     ),
     tickets: sqliteRows(
       db,
-      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
+      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, study_duration_years, created_at, called_at, started_at, finished_at, advisor_id, route_advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
     ),
     ticket_reviews: sqliteRows(
       db,
@@ -313,6 +336,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
         "assigned_languages_json",
         "assigned_courses_json",
         "assigned_specialties_json",
+        "assigned_study_years_json",
         "reception_open",
       ],
       snapshot.advisors
@@ -344,11 +368,13 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
         "specialty_code",
         "language_section",
         "course",
+        "study_duration_years",
         "created_at",
         "called_at",
         "started_at",
         "finished_at",
         "advisor_id",
+        "route_advisor_id",
         "advisor_name",
         "advisor_desk",
         "advisor_faculty",
@@ -424,13 +450,13 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
   ] = await Promise.all([
     q("SELECT id, is_active, created_at FROM queue_session ORDER BY id ASC"),
     q(
-      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, reception_open FROM advisors ORDER BY id ASC"
+      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, reception_open FROM advisors ORDER BY id ASC"
     ),
     q("SELECT id, login, password_hash, name FROM admin_users ORDER BY id ASC"),
     q("SELECT advisor_id, total_ms, updated_at FROM advisor_work_totals ORDER BY advisor_id ASC"),
     q("SELECT advisor_id, day, work_ms FROM advisor_work_daily ORDER BY advisor_id ASC, day ASC"),
     q(
-      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
+      "SELECT id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, study_duration_years, created_at, called_at, started_at, finished_at, advisor_id, route_advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note FROM tickets ORDER BY id ASC"
     ),
     q("SELECT ticket_id, stars, comment, created_at FROM ticket_reviews ORDER BY ticket_id ASC"),
     q("SELECT id, event_type, meta, created_at FROM stats_events ORDER BY id ASC"),
@@ -463,8 +489,8 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     if (shouldRestoreAdvisors) {
       for (const r of advisors.rows) {
         db.prepare(
-          `INSERT INTO advisors (id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, reception_open)
-           VALUES (@id, @name, @faculty, @department, @desk_number, @login, @password_hash, @assigned_schools_json, @assigned_language, @assigned_languages_json, @assigned_courses_json, @assigned_specialties_json, @reception_open)`
+          `INSERT INTO advisors (id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, reception_open)
+           VALUES (@id, @name, @faculty, @department, @desk_number, @login, @password_hash, @assigned_schools_json, @assigned_language, @assigned_languages_json, @assigned_courses_json, @assigned_specialties_json, @assigned_study_years_json, @reception_open)`
         ).run(r as any);
       }
     }
@@ -481,8 +507,8 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     }
     for (const r of tickets.rows) {
       db.prepare(
-        `INSERT INTO tickets (id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, created_at, called_at, started_at, finished_at, advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note)
-         VALUES (@id, @queue_number, @status, @student_first_name, @student_last_name, @school, @specialty, @specialty_code, @language_section, @course, @created_at, @called_at, @started_at, @finished_at, @advisor_id, @advisor_name, @advisor_desk, @advisor_faculty, @advisor_department, @comment, @case_type, @student_comment, @preferred_slot_at, @missed_student_note)`
+        `INSERT INTO tickets (id, queue_number, status, student_first_name, student_last_name, school, specialty, specialty_code, language_section, course, study_duration_years, created_at, called_at, started_at, finished_at, advisor_id, route_advisor_id, advisor_name, advisor_desk, advisor_faculty, advisor_department, comment, case_type, student_comment, preferred_slot_at, missed_student_note)
+         VALUES (@id, @queue_number, @status, @student_first_name, @student_last_name, @school, @specialty, @specialty_code, @language_section, @course, @study_duration_years, @created_at, @called_at, @started_at, @finished_at, @advisor_id, @route_advisor_id, @advisor_name, @advisor_desk, @advisor_faculty, @advisor_department, @comment, @case_type, @student_comment, @preferred_slot_at, @missed_student_note)`
       ).run(r as any);
     }
     for (const r of reviews.rows) {

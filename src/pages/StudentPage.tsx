@@ -18,6 +18,7 @@ type StudentForm = {
   specialtyCode: string;
   languageSection: string;
   course: string;
+  studyDurationYears: string;
 };
 
 function useLocalTicketId() {
@@ -73,6 +74,7 @@ export default function StudentPage() {
     specialtyCode: "",
     languageSection: "ru",
     course: "1",
+    studyDurationYears: "3",
   });
 
   useEffect(() => {
@@ -158,6 +160,7 @@ export default function StudentPage() {
             specialtyCode: form.specialtyCode,
             languageSection: form.languageSection,
             course: form.course,
+            studyDurationYears: form.studyDurationYears,
           }),
         });
         if (cancelled) return;
@@ -177,7 +180,7 @@ export default function StudentPage() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [ticketId, schoolApi, form.specialtyCode, form.languageSection, form.course, liveQueueEpoch]);
+  }, [ticketId, schoolApi, form.specialtyCode, form.languageSection, form.course, form.studyDurationYears, liveQueueEpoch]);
 
   useEffect(() => {
     if (!myTicket || myTicket.status !== "MISSED") {
@@ -327,6 +330,7 @@ export default function StudentPage() {
       specialtyCode: sp?.code ?? "",
       languageSection: form.languageSection,
       course: form.course,
+      studyDurationYears: Number(form.studyDurationYears),
     };
     if (preferredIso) body.preferredSlotAt = preferredIso;
     const res = await fetchJSON("/api/tickets", {
@@ -748,6 +752,14 @@ export default function StudentPage() {
                   {t(`courseNum${n}` as "courseNum1")}
                 </option>
               ))}
+            </select>
+            <select
+              className="ui-input sm:col-span-2"
+              value={form.studyDurationYears}
+              onChange={(e) => setForm((p) => ({ ...p, studyDurationYears: e.target.value }))}
+            >
+              <option value="2">ТиПО · 2 года обучения</option>
+              <option value="3">ТиПО · 3 года обучения</option>
             </select>
             <button type="submit" disabled={!canRegisterForm} className="ui-btn-primary mt-2 sm:col-span-2">
               {t("getTicket")}

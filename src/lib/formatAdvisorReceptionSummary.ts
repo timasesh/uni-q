@@ -65,6 +65,9 @@ export function formatAdvisorReceptionSummary(me: Advisor, lang: Lang): AdvisorR
     .filter((n) => n >= 1 && n <= 4);
   if (courses.length === 0) courses = [1, 2, 3, 4];
   const specs = safeParseArray<string>(me.assigned_specialties_json).map(String);
+  const studyYears = safeParseArray<number>(me.assigned_study_years_json)
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
 
   const sep = lang === "eng" ? ", " : " · ";
   const schoolsLine = schools.length > 0 ? schools.join(sep) : "—";
@@ -85,8 +88,15 @@ export function formatAdvisorReceptionSummary(me: Advisor, lang: Lang): AdvisorR
 
   const desk = String(me.desk_number || "").trim();
   const deskPart = desk ? windowLabel(lang, desk) : "";
+  let yearsPart = "";
+  if (studyYears.length > 0) {
+    const list = studyYears.sort((a, b) => a - b).join(", ");
+    if (lang === "eng") yearsPart = `Study years: ${list}`;
+    else if (lang === "kaz") yearsPart = `Оқу мерзімі: ${list}`;
+    else yearsPart = `Срок обучения: ${list}`;
+  }
 
-  const scopeLine = [langPart, coursePart, specPart, deskPart].filter(Boolean).join(" · ");
+  const scopeLine = [langPart, coursePart, yearsPart, specPart, deskPart].filter(Boolean).join(" · ");
 
   return { schoolsLine, scopeLine };
 }

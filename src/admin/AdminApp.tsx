@@ -31,12 +31,40 @@ import { useManagerContext } from "../context/ManagerContext";
 import { cn } from "../lib/cn";
 import { SCHEME_WINDOW_COUNT, parseDeskWindowNumber, schemeImagePathForWindow } from "../lib/deskWindow";
 import { AppLogo } from "../lib/brand";
+import { parseBackendDateTime } from "../lib/backendDateTime";
+import { SCHOOL_NAMES } from "../schools";
 
 function formatHm(ms: number) {
   const s = Math.floor(Math.max(0, ms) / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function presetRangeBtnClass(active: boolean) {
+  return cn(
+    "rounded-xl border px-3 py-2 text-xs font-extrabold transition",
+    active
+      ? "border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-600/25 dark:border-violet-400 dark:bg-violet-500 dark:text-white"
+      : "border-violet-200 text-violet-800 hover:bg-violet-50 dark:border-white/15 dark:text-violet-200 dark:hover:bg-white/5"
+  );
+}
+
+function formatLocalDateTime(raw: string | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+  const d = parseBackendDateTime(raw);
+  if (!d) return "—";
+  return d.toLocaleString([], options ?? { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function ticketStatusLabel(status: string, t: (k: string) => string): string {
+  const s = String(status || "").toUpperCase();
+  if (s === "WAITING") return t("waiting");
+  if (s === "CALLED") return t("called");
+  if (s === "IN_SERVICE") return t("inService");
+  if (s === "MISSED") return t("missed");
+  if (s === "DONE") return t("done");
+  if (s === "CANCELLED") return t("cancelled");
+  return s || "—";
 }
 
 type AdvisorRow = {
@@ -50,6 +78,7 @@ type AdvisorRow = {
   assigned_languages_json: string | null;
   assigned_courses_json: string | null;
   assigned_specialties_json: string | null;
+  assigned_study_years_json?: string | null;
   work_ms_today: number;
 };
 
@@ -78,10 +107,14 @@ function formatReception(row: AdvisorRow): string {
     }
   }
   const specs = safeParseArray<string>(row.assigned_specialties_json, []);
+  const studyYears = safeParseArray<number>(row.assigned_study_years_json, [])
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
   const parts: string[] = [];
   if (schools.length) parts.push(`Школы: ${schools.join(", ")}`);
   parts.push(langs?.length ? `Языки: ${langs.join(", ")}` : "Языки: любые");
   parts.push(`Курсы: ${(courses.length ? courses : [1, 2, 3, 4]).join(", ")}`);
+  if (studyYears.length) parts.push(`ТиПО: ${studyYears.join(", ")} г.`);
   if (specs.length) parts.push(`Спец.: ${specs.join(", ")}`);
   return parts.join(" · ");
 }
@@ -783,7 +816,11 @@ type AdminVisitExportRow = {
   advisor_desk: string | null;
   case_type: string | null;
   comment: string | null;
+  started_at: string | null;
   finished_at: string | null;
+  queue_wait_minutes: number | null;
+  desk_service_minutes: number | null;
+  total_minutes: number | null;
   is_repeat: number;
 };
 
@@ -812,6 +849,12 @@ function AdminFaqNoQueueStats() {
   const [rows, setRows] = useState<FaqDailyPoint[] | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const todayRange = localYmdToday();
+  const weekFrom = localYmdDaysAgo(6);
+  const monthFrom = firstDayOfMonthYmd();
+  const isTodayPreset = !allTime && from === todayRange && to === todayRange;
+  const isWeekPreset = !allTime && from === weekFrom && to === todayRange;
+  const isMonthPreset = !allTime && from === monthFrom && to === todayRange;
 
   const load = async (override?: Partial<{ from: string; to: string; allTime: boolean }>) => {
     const f = override?.from ?? from;
@@ -935,7 +978,7 @@ function AdminFaqNoQueueStats() {
                 setTo(d0);
                 void load({ from: d0, to: d0, allTime: false });
               }}
-              className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+              className={presetRangeBtnClass(isTodayPreset)}
             >
               {t("adminPresetToday")}
             </button>
@@ -949,7 +992,7 @@ function AdminFaqNoQueueStats() {
                 setTo(t0);
                 void load({ from: f0, to: t0, allTime: false });
               }}
-              className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+              className={presetRangeBtnClass(isWeekPreset)}
             >
               {t("adminPresetWeek")}
             </button>
@@ -963,7 +1006,7 @@ function AdminFaqNoQueueStats() {
                 setTo(t0);
                 void load({ from: f0, to: t0, allTime: false });
               }}
-              className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+              className={presetRangeBtnClass(isMonthPreset)}
             >
               {t("adminPresetMonth")}
             </button>
@@ -1045,6 +1088,12 @@ function AdminVisitsExport() {
   const [rows, setRows] = useState<AdminVisitExportRow[] | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const todayRange = localYmdToday();
+  const weekFrom = localYmdDaysAgo(6);
+  const monthFrom = firstDayOfMonthYmd();
+  const isTodayPreset = from === todayRange && to === todayRange;
+  const isWeekPreset = from === weekFrom && to === todayRange;
+  const isMonthPreset = from === monthFrom && to === todayRange;
 
   const visitQuery = () => {
     const qs = new URLSearchParams({ from, to });
@@ -1134,9 +1183,9 @@ function AdminVisitsExport() {
               className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
             >
               <option value="">{t("adminFilterAny")}</option>
-              <option value="DONE">DONE</option>
-              <option value="MISSED">MISSED</option>
-              <option value="CANCELLED">CANCELLED</option>
+              <option value="DONE">{ticketStatusLabel("DONE", t)}</option>
+              <option value="MISSED">{ticketStatusLabel("MISSED", t)}</option>
+              <option value="CANCELLED">{ticketStatusLabel("CANCELLED", t)}</option>
             </select>
           </label>
           <label className="flex min-w-[160px] flex-col gap-1.5">
@@ -1175,7 +1224,7 @@ function AdminVisitsExport() {
               setFrom(d0);
               setTo(d0);
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isTodayPreset)}
           >
             {t("adminPresetToday")}
           </button>
@@ -1185,7 +1234,7 @@ function AdminVisitsExport() {
               setFrom(localYmdDaysAgo(6));
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isWeekPreset)}
           >
             {t("adminPresetWeek")}
           </button>
@@ -1195,7 +1244,7 @@ function AdminVisitsExport() {
               setFrom(firstDayOfMonthYmd());
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isMonthPreset)}
           >
             {t("adminPresetMonth")}
           </button>
@@ -1215,7 +1264,11 @@ function AdminVisitsExport() {
                   {[
                     t("adminVisitsColTicket"),
                     t("adminVisitsColQueue"),
-                    t("adminVisitsColFinished"),
+                    "Начало консультации",
+                    "Окончание консультации",
+                    t("historyQueueWait"),
+                    t("historyServiceTime"),
+                    t("historyTotalTime"),
                     t("adminVisitsColStudent"),
                     t("adminVisitsColSchool"),
                     t("adminVisitsColManager"),
@@ -1237,7 +1290,19 @@ function AdminVisitsExport() {
                     <td className="px-3 py-2.5 font-mono text-[11px] text-violet-800 dark:text-violet-200">{r.ticket_id}</td>
                     <td className="px-3 py-2.5 font-black tabular-nums text-violet-950 dark:text-white">{r.formatted_number}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.started_at ? String(r.started_at).replace("T", " ").slice(0, 19) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
                       {r.finished_at ? String(r.finished_at).replace("T", " ").slice(0, 19) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.queue_wait_minutes != null ? `${r.queue_wait_minutes} ${t("minShort")}` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.desk_service_minutes != null ? `${r.desk_service_minutes} ${t("minShort")}` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.total_minutes != null ? `${r.total_minutes} ${t("minShort")}` : "—"}
                     </td>
                     <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
                       {String(r.student_last_name || "").trim()} {String(r.student_first_name || "").trim()}
@@ -1248,7 +1313,7 @@ function AdminVisitsExport() {
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_name || "—"}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_desk || "—"}</td>
-                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.status}</td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{ticketStatusLabel(r.status, t)}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
                       {Number(r.is_repeat) === 1 ? t("adminVisitsYes") : t("adminVisitsNo")}
                     </td>
@@ -1495,6 +1560,25 @@ type AdminWaitResponse = {
   rows: AdminWaitRow[];
 };
 
+type AdminQueueRow = {
+  id: number;
+  formatted_number: string;
+  status: string;
+  student_first_name: string | null;
+  student_last_name: string | null;
+  school: string | null;
+  specialty: string | null;
+  specialty_code: string | null;
+  language_section: string | null;
+  course: string | null;
+  study_duration_years: number | null;
+  owner_manager_name: string | null;
+  owner_manager_desk: string | null;
+  created_at: string;
+};
+
+type AdminQueuesResponse = { rows: AdminQueueRow[] };
+
 type AdminSchoolsServedRow = { school: string; count: number };
 type AdminSchoolsServedResponse = { from: string; to: string; rows: AdminSchoolsServedRow[] };
 
@@ -1510,6 +1594,12 @@ function AdminWaitStats() {
   const [data, setData] = useState<AdminWaitResponse | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const todayRange = localYmdToday();
+  const weekFrom = localYmdDaysAgo(6);
+  const monthFrom = firstDayOfMonthYmd();
+  const isTodayPreset = from === todayRange && to === todayRange;
+  const isWeekPreset = from === weekFrom && to === todayRange;
+  const isMonthPreset = from === monthFrom && to === todayRange;
 
   const buildQs = (csv: boolean) => {
     const qs = new URLSearchParams({ from, to });
@@ -1601,7 +1691,7 @@ function AdminWaitStats() {
               <option value="">{t("adminFilterAny")}</option>
               {TICKET_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {ticketStatusLabel(s, t)}
                 </option>
               ))}
             </select>
@@ -1657,7 +1747,7 @@ function AdminWaitStats() {
               setFrom(d0);
               setTo(d0);
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isTodayPreset)}
           >
             {t("adminPresetToday")}
           </button>
@@ -1667,7 +1757,7 @@ function AdminWaitStats() {
               setFrom(localYmdDaysAgo(6));
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isWeekPreset)}
           >
             {t("adminPresetWeek")}
           </button>
@@ -1677,7 +1767,7 @@ function AdminWaitStats() {
               setFrom(firstDayOfMonthYmd());
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isMonthPreset)}
           >
             {t("adminPresetMonth")}
           </button>
@@ -1754,7 +1844,7 @@ function AdminWaitStats() {
                         <td className="px-3 py-2.5 font-mono tabular-nums font-bold text-amber-700 dark:text-amber-300">
                           {r.wait_minutes}
                         </td>
-                        <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.status}</td>
+                        <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{ticketStatusLabel(r.status, t)}</td>
                         <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
                           {String(r.student_last_name || "").trim()} {String(r.student_first_name || "").trim()}
                         </td>
@@ -1772,6 +1862,108 @@ function AdminWaitStats() {
   );
 }
 
+function AdminQueuesBoard() {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<AdminQueueRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setErr("");
+    const res = await fetchJSON("/api/admin/queues/all");
+    const j = (await readJSON<AdminQueuesResponse & { error?: string }>(res).catch(() => ({ rows: [] }))) as
+      | (AdminQueuesResponse & { error?: string })
+      | { error?: string };
+    if (!res.ok) {
+      setErr((j as any)?.error || "Ошибка загрузки");
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setRows(Array.isArray((j as any).rows) ? (j as any).rows : []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <NavLink
+        to="/admin/stats"
+        className="inline-flex items-center gap-2 text-sm font-extrabold text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-white"
+      >
+        ← {t("back")}
+      </NavLink>
+      <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-black text-violet-950 dark:text-white">Все очереди по менеджерам</h2>
+            <p className="mt-1 text-sm font-medium text-violet-700 dark:text-violet-300">
+              Общий список активных талонов (WAITING/CALLED/IN_SERVICE) и их текущий менеджер.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:bg-violet-500"
+          >
+            {t("refresh")}
+          </button>
+        </div>
+        {err && <div className="mb-4 text-sm font-semibold text-rose-600">{err}</div>}
+        {loading ? (
+          <div className="py-12 text-center text-sm font-semibold text-violet-600 dark:text-violet-300">{t("loading")}</div>
+        ) : rows.length === 0 ? (
+          <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-400">{t("adminWaitEmpty")}</div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-violet-100 dark:border-white/10">
+            <table className="min-w-[1200px] w-full text-left text-xs">
+              <thead className="bg-violet-50 text-violet-900 dark:bg-slate-900 dark:text-violet-200">
+                <tr>
+                  {["№", "Талон", "Статус", "Студент", "Профиль", "Менеджер", "Создан"].map((h) => (
+                    <th key={h} className="px-3 py-3 font-black uppercase tracking-widest text-[10px]">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-violet-100 dark:divide-white/10">
+                {rows.map((r) => (
+                  <tr key={r.id} className="bg-white dark:bg-slate-950/50">
+                    <td className="px-3 py-2.5 font-mono text-[11px] text-violet-800 dark:text-violet-200">{r.id}</td>
+                    <td className="px-3 py-2.5 font-black tabular-nums text-violet-950 dark:text-white">{r.formatted_number}</td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{ticketStatusLabel(r.status, t)}</td>
+                    <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
+                      {String(r.student_last_name || "").trim()} {String(r.student_first_name || "").trim()}
+                    </td>
+                    <td className="max-w-[340px] px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.school || "—"} · {r.language_section || "—"} · {r.course || "—"}
+                      {r.study_duration_years ? ` · ТиПО ${r.study_duration_years} г.` : ""}
+                      <div className="mt-0.5 text-[11px] opacity-80">
+                        {r.specialty || "—"} {r.specialty_code ? `(${r.specialty_code})` : ""}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      <div className="font-semibold text-violet-950 dark:text-white">{r.owner_manager_name || "—"}</div>
+                      {r.owner_manager_desk ? <div className="text-[11px] opacity-80">{r.owner_manager_desk}</div> : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {String(r.created_at || "").replace("T", " ").slice(0, 19)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminSchoolsServedStats() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
@@ -1779,6 +1971,12 @@ function AdminSchoolsServedStats() {
   const [data, setData] = useState<AdminSchoolsServedResponse | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const todayRange = localYmdToday();
+  const weekFrom = localYmdDaysAgo(6);
+  const monthFrom = firstDayOfMonthYmd();
+  const isTodayPreset = from === todayRange && to === todayRange;
+  const isWeekPreset = from === weekFrom && to === todayRange;
+  const isMonthPreset = from === monthFrom && to === todayRange;
 
   const qs = (csv: boolean) => {
     const s = new URLSearchParams({ from, to });
@@ -1820,6 +2018,7 @@ function AdminSchoolsServedStats() {
 
   const rows = data?.rows ?? [];
   const maxCount = rows.reduce((m, r) => Math.max(m, r.count), 0);
+  const totalCount = rows.reduce((sum, r) => sum + Number(r.count || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -1882,7 +2081,7 @@ function AdminSchoolsServedStats() {
               setFrom(d0);
               setTo(d0);
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isTodayPreset)}
           >
             {t("adminPresetToday")}
           </button>
@@ -1892,7 +2091,7 @@ function AdminSchoolsServedStats() {
               setFrom(localYmdDaysAgo(6));
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isWeekPreset)}
           >
             {t("adminPresetWeek")}
           </button>
@@ -1902,7 +2101,7 @@ function AdminSchoolsServedStats() {
               setFrom(firstDayOfMonthYmd());
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isMonthPreset)}
           >
             {t("adminPresetMonth")}
           </button>
@@ -1916,6 +2115,9 @@ function AdminSchoolsServedStats() {
           <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-400">{t("adminSchoolsEmpty")}</div>
         ) : (
           <>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-black text-violet-900 dark:border-white/10 dark:bg-slate-900 dark:text-violet-200">
+              Итого по всем школам: <span className="tabular-nums text-violet-950 dark:text-white">{totalCount}</span>
+            </div>
             <div className="mb-6 overflow-x-auto rounded-xl border border-violet-100 dark:border-white/10">
               <table className="min-w-[420px] w-full text-left text-sm">
                 <thead className="bg-violet-50 text-violet-900 dark:bg-slate-900 dark:text-violet-200">
@@ -1988,6 +2190,12 @@ function AdminBookingsStats() {
   const [rows, setRows] = useState<AdminBookingRow[] | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const todayRange = localYmdToday();
+  const weekFrom = localYmdDaysAgo(6);
+  const monthFrom = firstDayOfMonthYmd();
+  const isTodayPreset = from === todayRange && to === todayRange;
+  const isWeekPreset = from === weekFrom && to === todayRange;
+  const isMonthPreset = from === monthFrom && to === todayRange;
 
   const buildQs = (csv: boolean) => {
     const qs = new URLSearchParams({ from, to });
@@ -2077,7 +2285,7 @@ function AdminBookingsStats() {
               <option value="">{t("adminFilterAny")}</option>
               {TICKET_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {ticketStatusLabel(s, t)}
                 </option>
               ))}
             </select>
@@ -2086,12 +2294,18 @@ function AdminBookingsStats() {
             <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
               {t("adminFilterSchool")}
             </span>
-            <input
+            <select
               value={school}
               onChange={(e) => setSchool(e.target.value)}
-              placeholder={t("adminFilterSchoolPh")}
               className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-            />
+            >
+              <option value="">{t("adminFilterAny")}</option>
+              {SCHOOL_NAMES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </label>
           <button
             type="button"
@@ -2118,7 +2332,7 @@ function AdminBookingsStats() {
               setFrom(d0);
               setTo(d0);
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isTodayPreset)}
           >
             {t("adminPresetToday")}
           </button>
@@ -2128,7 +2342,7 @@ function AdminBookingsStats() {
               setFrom(localYmdDaysAgo(6));
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isWeekPreset)}
           >
             {t("adminPresetWeek")}
           </button>
@@ -2138,7 +2352,7 @@ function AdminBookingsStats() {
               setFrom(firstDayOfMonthYmd());
               setTo(localYmdToday());
             }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-800 dark:border-white/15 dark:text-violet-200"
+            className={presetRangeBtnClass(isMonthPreset)}
           >
             {t("adminPresetMonth")}
           </button>
@@ -2176,7 +2390,7 @@ function AdminBookingsStats() {
                 {rows.map((r) => (
                   <tr key={r.ticket_id} className="bg-white dark:bg-slate-950/50">
                     <td className="whitespace-nowrap px-3 py-2.5 font-bold tabular-nums text-violet-950 dark:text-white">
-                      {String(r.preferred_slot_at).replace("T", " ").slice(0, 16)}
+                      {formatLocalDateTime(String(r.preferred_slot_at || ""))}
                     </td>
                     <td className="px-3 py-2.5 font-mono text-[11px] text-violet-800 dark:text-violet-200">{r.ticket_id}</td>
                     <td className="px-3 py-2.5 font-black tabular-nums text-violet-950 dark:text-white">{r.formatted_number}</td>
@@ -2187,9 +2401,9 @@ function AdminBookingsStats() {
                       <div className="font-semibold">{r.school || "—"}</div>
                       <div className="text-[11px]">{r.specialty || ""}</div>
                     </td>
-                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.status}</td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{ticketStatusLabel(r.status, t)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {String(r.created_at).replace("T", " ").slice(0, 19)}
+                      {formatLocalDateTime(String(r.created_at || ""), { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_name || "—"}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_desk || "—"}</td>
@@ -2285,6 +2499,14 @@ function AdminStats() {
       metric: data ? `${data.bookedSlotsLive} ${t("adminStatBookedLive")}` : "…",
       accent: "from-indigo-500 to-violet-600",
       linkTo: "/admin/stats/bookings",
+    },
+    {
+      icon: Users,
+      title: "Все очереди",
+      desc: "Общий список активных талонов по менеджерам.",
+      metric: "Live",
+      accent: "from-cyan-500 to-blue-600",
+      linkTo: "/admin/stats/queues",
     },
   ];
 
@@ -2552,6 +2774,7 @@ export default function AdminApp() {
         <Route path="stats/faq" element={<AdminFaqNoQueueStats />} />
         <Route path="stats/reviews" element={<AdminReviewsExport />} />
         <Route path="stats/wait" element={<AdminWaitStats />} />
+        <Route path="stats/queues" element={<AdminQueuesBoard />} />
         <Route path="stats/schools" element={<AdminSchoolsServedStats />} />
         <Route path="stats/bookings" element={<AdminBookingsStats />} />
         <Route path="load" element={<AdminLoad />} />
