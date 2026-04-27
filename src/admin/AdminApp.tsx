@@ -29,7 +29,8 @@ import { useI18n, type Lang } from "../i18n";
 import { useAdminContext, type AdminUser } from "../context/AdminContext";
 import { useManagerContext } from "../context/ManagerContext";
 import { cn } from "../lib/cn";
-import { SCHEME_WINDOW_COUNT, parseDeskWindowNumber, schemeImagePathForWindow } from "../lib/deskWindow";
+import { SCHEME_WINDOW_COUNT, parseDeskWindowNumber } from "../lib/deskWindow";
+import SchemeImage from "../components/SchemeImage";
 import { AppLogo } from "../lib/brand";
 import { parseBackendDateTime } from "../lib/backendDateTime";
 import { SCHOOL_NAMES } from "../schools";
@@ -616,8 +617,8 @@ function AdminWindows() {
                       </select>
                     </td>
                     <td className="py-3">
-                      <img
-                        src={schemeImagePathForWindow(w)}
+                      <SchemeImage
+                        windowNumber={w}
                         alt=""
                         className="h-[72px] w-auto max-w-[min(100%,200px)] rounded-lg border border-violet-100 bg-slate-50 object-contain dark:border-white/10 dark:bg-slate-900"
                       />
@@ -816,6 +817,7 @@ type AdminVisitExportRow = {
   advisor_desk: string | null;
   case_type: string | null;
   comment: string | null;
+  student_comment: string | null;
   started_at: string | null;
   finished_at: string | null;
   queue_wait_minutes: number | null;
@@ -1277,6 +1279,7 @@ function AdminVisitsExport() {
                     t("adminVisitsColRepeat"),
                     t("adminVisitsColCategory"),
                     t("adminVisitsColComment"),
+                    t("historyStudentComment"),
                   ].map((h) => (
                     <th key={h} className="px-3 py-3 font-black uppercase tracking-widest text-[10px]">
                       {h}
@@ -1320,6 +1323,9 @@ function AdminVisitsExport() {
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.case_type || "—"}</td>
                     <td className="max-w-[240px] px-3 py-2.5 break-words text-violet-800 dark:text-violet-200">
                       {r.comment || "—"}
+                    </td>
+                    <td className="max-w-[240px] px-3 py-2.5 break-words text-violet-800 dark:text-violet-200">
+                      {r.student_comment || "—"}
                     </td>
                   </tr>
                 ))}

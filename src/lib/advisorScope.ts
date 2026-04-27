@@ -29,12 +29,12 @@ function normSchool(s: unknown) {
   return String(s ?? "")
     .trim()
     .toLowerCase()
-    .replace(/\\s+/g, " ");
+    .replace(/\s+/g, " ");
 }
 
 function parseCourse(course: string | null | undefined): number | null {
   if (!course) return null;
-  const m = String(course).match(/\\d+/);
+  const m = String(course).match(/\d+/);
   if (!m) return null;
   const n = Number(m[0]);
   return Number.isFinite(n) ? n : null;

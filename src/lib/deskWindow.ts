@@ -20,3 +20,11 @@ export function schemeImagePathGeneral(): string {
 export function schemeImagePathForWindow(n: number): string {
   return `/scheme/${n}.webp`;
 }
+
+export function schemeImagePathsGeneral(): { webp: string; png: string } {
+  return { webp: "/scheme/scheme.webp", png: "/scheme/scheme.png" };
+}
+
+export function schemeImagePathsForWindow(n: number): { webp: string; png: string } {
+  return { webp: `/scheme/${n}.webp`, png: `/scheme/${n}.png` };
+}

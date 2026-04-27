@@ -8,7 +8,8 @@ import { cn } from "../lib/cn";
 import { SCHOOL_ENTRIES, schoolApiNameById, specialtiesForSchool } from "../schools";
 import { availableSlotLabelsForToday, isoFromLocalTodayHM } from "../lib/bookingSlots";
 import { useI18n } from "../i18n";
-import { parseDeskWindowNumber, schemeImagePathForWindow, schemeImagePathGeneral } from "../lib/deskWindow";
+import { parseDeskWindowNumber } from "../lib/deskWindow";
+import SchemeImage from "../components/SchemeImage";
 import { parseBackendDateTime } from "../lib/backendDateTime";
 
 type StudentForm = {
@@ -439,12 +440,7 @@ export default function StudentPage() {
   ];
 
   const deskWindow = myTicket ? parseDeskWindowNumber(myTicket.advisor_desk) : null;
-  const schemeImageSrc =
-    myTicket && myTicket.status === "WAITING"
-      ? schemeImagePathGeneral()
-      : deskWindow != null
-        ? schemeImagePathForWindow(deskWindow)
-        : schemeImagePathGeneral();
+  const schemeWindowNumber = myTicket && myTicket.status === "WAITING" ? null : deskWindow;
   const showSchemeButton =
     myTicket &&
     (myTicket.status === "WAITING" || myTicket.status === "CALLED" || myTicket.status === "IN_SERVICE");
@@ -847,8 +843,8 @@ export default function StudentPage() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <img
-                src={schemeImageSrc}
+              <SchemeImage
+                windowNumber={schemeWindowNumber}
                 alt=""
                 className="mx-auto w-full max-w-full rounded-lg object-contain"
               />

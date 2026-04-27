@@ -88,9 +88,11 @@ export async function pgAdminVisitsBetween(from: string, to: string): Promise<an
        l.advisor_name,
        l.advisor_desk,
        l.comment,
+       t.student_comment,
        l.case_type,
        l.is_repeat
      FROM ticket_visit_log l
+     LEFT JOIN tickets t ON t.id = l.ticket_id
      WHERE (l.finished_at AT TIME ZONE $1)::date >= $2::date
        AND (l.finished_at AT TIME ZONE $1)::date <= $3::date
      ORDER BY l.finished_at DESC NULLS LAST, l.id DESC`,

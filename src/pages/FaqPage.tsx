@@ -5,7 +5,8 @@ import { postStatsEvent } from "../api";
 import { getFaqSections } from "../data/faq";
 import { useI18n } from "../i18n";
 import { cn } from "../lib/cn";
-import { SCHEME_WINDOW_COUNT, schemeImagePathForWindow, schemeImagePathGeneral } from "../lib/deskWindow";
+import { SCHEME_WINDOW_COUNT } from "../lib/deskWindow";
+import SchemeImage from "../components/SchemeImage";
 
 export default function FaqPage() {
   const { t, lang } = useI18n();
@@ -109,8 +110,8 @@ export default function FaqPage() {
         <h2 className="text-lg font-black text-violet-950 dark:text-white">{t("mapTitle")}</h2>
         <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{t("mapBody")}</p>
         <div className="mt-4 overflow-hidden rounded-2xl border border-violet-200 bg-violet-50/50 dark:border-white/10 dark:bg-slate-800/40">
-          <img
-            src={schemeView === "general" ? schemeImagePathGeneral() : schemeImagePathForWindow(schemeView)}
+          <SchemeImage
+            windowNumber={schemeView === "general" ? null : schemeView}
             alt=""
             className="mx-auto block max-h-[min(70vh,720px)] w-full max-w-4xl object-contain"
           />

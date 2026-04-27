@@ -2176,9 +2176,11 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
          l.advisor_name,
          l.advisor_desk,
          l.comment,
+         t.student_comment,
          l.case_type,
          l.is_repeat
        FROM ticket_visit_log l
+       LEFT JOIN tickets t ON t.id = l.ticket_id
        WHERE date(l.finished_at, 'localtime') >= ? AND date(l.finished_at, 'localtime') <= ?
        ORDER BY l.finished_at DESC, l.id DESC`
       )
@@ -2218,7 +2220,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
 
   if (format === "csv") {
     const header =
-      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;manager;desk;case_type;comment;called_at;started_at;finished_at;queue_wait_min;service_min;total_min";
+      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;manager;desk;case_type;comment;student_comment;called_at;started_at;finished_at;queue_wait_min;service_min;total_min";
     const lines = rows.map((r) =>
       [
         r.ticket_id,
@@ -2236,6 +2238,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
         r.advisor_desk,
         r.case_type,
         r.comment,
+        r.student_comment,
         r.called_at,
         r.started_at,
         r.finished_at,
