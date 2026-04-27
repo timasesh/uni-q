@@ -125,7 +125,7 @@ export default function StudentPage() {
   }, [schoolApi]);
 
   useEffect(() => {
-    const s = io({ transports: ["websocket"] });
+    const s = io({ transports: ["websocket", "polling"] });
     sockRef.current = s;
     s.on("queue:update", (payload: LiveQueue) => {
       setLive(payload);

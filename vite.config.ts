@@ -10,7 +10,8 @@ export default defineConfig({
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "ws://localhost:5174",
+        // Must support both websocket and long-polling transports
+        target: "http://localhost:5174",
         ws: true,
       },
     },
