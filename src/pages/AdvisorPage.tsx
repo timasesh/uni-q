@@ -345,7 +345,12 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
 
   const ticketsInMyScope = useMemo(() => {
     if (!me) return [];
-    return waitingTickets.filter((t) => ticketMatchesAdvisor(me, t));
+    return waitingTickets.filter((t) => {
+      const visibleIds = Array.isArray((t as any).visible_manager_ids) ? ((t as any).visible_manager_ids as number[]) : null;
+      if (visibleIds) return visibleIds.includes(Number(me.id));
+      // Fallback for older backend payloads
+      return ticketMatchesAdvisor(me, t);
+    });
   }, [waitingTickets, me]);
 
   const waitingForDisplay = useMemo(() => {

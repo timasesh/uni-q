@@ -532,6 +532,25 @@ function pickRouteAdvisorIdForTicket(ticket: any, advisorRows: any[]): number | 
   return best;
 }
 
+function visibleAdvisorIdsForTicket(ticket: any, advisorRows: any[]): number[] {
+  const ids: number[] = [];
+  for (const a of advisorRows) {
+    if (Number(a.reception_open) === 0) continue;
+    const scope: AdvisorScope = {
+      assigned_schools_json: a.assigned_schools_json ?? "[]",
+      assigned_languages_json: a.assigned_languages_json ?? null,
+      assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
+      assigned_specialties_json: a.assigned_specialties_json ?? null,
+      assigned_study_years_json: a.assigned_study_years_json ?? null,
+    };
+    if (!ticketMatchesScope(ticket, scope)) continue;
+    const id = Number(a.id);
+    if (!Number.isFinite(id)) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+
 function ensureRouteOwnersForWaitingTickets() {
   const waiting = db.prepare("SELECT id, school, language_section, course, specialty_code, study_duration_years FROM tickets WHERE status = 'WAITING' AND route_advisor_id IS NULL").all() as any[];
   if (waiting.length === 0) return;
@@ -692,6 +711,7 @@ function computeEstimatedMinutes(newTicket: any): number {
 
 function getLiveQueue() {
   const sessionState = getQueueSession();
+  const advisors = advisorsRowsForRouting();
   const tickets = db
     .prepare(
       `SELECT id, queue_number, status, school, specialty, specialty_code, language_section, course,
@@ -714,6 +734,7 @@ function getLiveQueue() {
       ...t,
       formatted_number: formatQueueNumber(t.queue_number),
       route_advisor_id: t.status === "WAITING" ? (t.route_advisor_id ?? null) : null,
+      visible_manager_ids: t.status === "WAITING" ? visibleAdvisorIdsForTicket(t, advisors) : null,
     })),
   };
 }

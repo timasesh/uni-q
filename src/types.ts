@@ -16,6 +16,8 @@ export type Ticket = {
   advisor_id?: number | null;
   /** Для WAITING: единственный менеджер, которому показывают этот талон (детерминированный выбор при пересечении зон). */
   route_advisor_id?: number | null;
+  /** Для WAITING: менеджеры, которым талон виден по серверному scope. */
+  visible_manager_ids?: number[] | null;
   advisor_name?: string | null;
   advisor_desk?: string | null;
   advisor_faculty?: string | null;
