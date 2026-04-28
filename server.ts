@@ -314,7 +314,6 @@ function ensureAdminSeed() {
 
   // Админ от вас (логин = email)
   ensureAdmin("S.Mussa@almau.edu.kz", "admin2026", "Мұса Самал");
-  ensureAdmin("s.akhmetova@almau.edu.kz", "admin2026", "Ахметова Салтанат");
 }
 ensureAdminSeed();
 
@@ -334,6 +333,7 @@ function ensureManagerSeed() {
   // Seed AlmaU managers (login = email). Passwords can be changed later in admin panel if needed.
   ensureManager("d.aubakirova@almau.edu.kz", "almau2026", "Аубакирова Дамира");
   ensureManager("s.kussainova@almau.edu.kz", "almau2026", "Кусайнова Шолпан");
+  ensureManager("s.akhmetova@almau.edu.kz", "almau2026", "Ахметова Салтанат");
   ensureManager("a.omar@almau.edu.kz", "almau2026", "Омар Айдана");
   ensureManager("a.zhauynger@almau.edu.kz", "almau2026", "Жауынгер Әлия");
 }
