@@ -312,9 +312,6 @@ function ensureAdminSeed() {
     }
   };
 
-  // Тестовый админ, оставить на всякий случай.
-  ensureAdmin("timaadmin", "admin2010", "Администратор");
-
   // Админ от вас (логин = email)
   ensureAdmin("S.Mussa@almau.edu.kz", "admin2026", "Мұса Самал");
   ensureAdmin("s.akhmetova@almau.edu.kz", "admin2026", "Ахметова Салтанат");
