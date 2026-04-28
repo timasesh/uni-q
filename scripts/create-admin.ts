@@ -18,7 +18,7 @@ async function createAdmin() {
 
   const admins = [
     { login: 'S.Mussa@almau.edu.kz', password: 'admin2026' },
-    { login: 's.akmetova@almau.edu.kz', password: 'almau2026' }
+    { login: 's.akhmetova@almau.edu.kz', password: 'admin2026' }
   ];
 
   for (const admin of admins) {
