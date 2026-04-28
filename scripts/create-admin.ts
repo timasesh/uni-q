@@ -1,22 +1,45 @@
 // scripts/create-admin.ts
-import Database from 'better-sqlite3'; // или твой ORM
-import bcrypt from 'bcrypt';
+import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 
-const db = new Database(path.join(process.cwd(), 'uni-q.sqlite'));
+const db = new Database(path.join(process.cwd(), 'data', 'uni-q.sqlite'));
 
 async function createAdmin() {
-  const email = 'S.Mussa@almau.edu.kz';
-  const password = 'admin2026';
-  const hashedPassword = await bcrypt.hash(password, 10);
+  // Создаём таблицу, если её нет
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      login TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT
+    )
+  `);
 
-  db.prepare(`
-    INSERT INTO users (email, password, role, created_at)
-    VALUES (?, ?, 'admin', datetime('now'))
-    ON CONFLICT(email) DO UPDATE SET role = 'admin'
-  `).run(email, hashedPassword, );
+  const admins = [
+    { login: 'S.Mussa@almau.edu.kz', password: 'admin2026' },
+    { login: 's.akmetova@almau.edu.kz', password: 'almau2026' }
+  ];
 
-  console.log('✅ Админ создан:', email);
+  for (const admin of admins) {
+    const hashedPassword = await bcrypt.hash(admin.password, 10);
+
+    try {
+      db.prepare(`
+        INSERT INTO admin_users (login, password_hash, name)
+        VALUES (?, ?, ?)
+      `).run(admin.login, hashedPassword, admin.login);
+
+      console.log('✅ Админ создан:', admin.login);
+    } catch (err: any) {
+      if (err.message.includes('UNIQUE constraint failed')) {
+        console.log('⚠️ Админ уже существует:', admin.login);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   db.close();
 }
 
