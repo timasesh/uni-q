@@ -1,14 +1,15 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Gamepad2 } from "lucide-react";
 import StudentPage from "./pages/StudentPage";
 import StudentEntryPage from "./pages/StudentEntryPage";
 import FaqPage from "./pages/FaqPage";
+import FlappyBirdPage from "./pages/FlappyBirdPage";
 import ChatWidget from "./components/ChatWidget";
 import AdvisorPage from "./pages/AdvisorPage";
 import AdvisorSettingsPage from "./pages/AdvisorSettingsPage";
 import AdminApp from "./admin/AdminApp";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "./i18n";
 import { useManagerContext } from "./context/ManagerContext";
 import ManagerWorkTimer from "./components/ManagerWorkTimer";
@@ -16,11 +17,11 @@ import { AppLogo } from "./lib/brand";
 
 export default function App() {
   const loc = useLocation();
+  const nav = useNavigate();
   const isManager = loc.pathname.startsWith("/manager");
   const isAdmin = loc.pathname.startsWith("/admin");
   const { managerId } = useManagerContext();
   const { t, lang, setLang } = useI18n();
-  const gameWindowRef = useRef<Window | null>(null);
 
   const [managerDark, setManagerDark] = useState(false);
 
@@ -56,25 +57,7 @@ export default function App() {
     else root.classList.remove("dark");
   }, [applyManagerDark, isAdmin]);
 
-  useEffect(() => {
-    const onCalled = () => {
-      if (gameWindowRef.current && !gameWindowRef.current.closed) {
-        try {
-          gameWindowRef.current.close();
-        } catch {
-          // ignore cross-window close issues
-        }
-      }
-      gameWindowRef.current = null;
-    };
-    window.addEventListener("uniq:student-called", onCalled);
-    return () => window.removeEventListener("uniq:student-called", onCalled);
-  }, []);
-
-  const openGame = () => {
-    const w = window.open("/flappy-bird/", "uniq-flappy-bird", "width=460,height=760");
-    if (w) gameWindowRef.current = w;
-  };
+  const openGame = () => nav("/game");
 
   if (loc.pathname.startsWith("/admin")) {
     return <AdminApp />;
@@ -141,6 +124,7 @@ export default function App() {
           <Route path="/" element={<StudentEntryPage />} />
           <Route path="/student" element={<StudentPage />} />
           <Route path="/faq" element={<FaqPage />} />
+          <Route path="/game" element={<FlappyBirdPage />} />
           <Route path="/advisor" element={<Navigate to="/manager" replace />} />
           <Route path="/advisor/settings" element={<Navigate to="/manager/settings" replace />} />
           <Route
