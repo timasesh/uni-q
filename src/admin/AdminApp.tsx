@@ -1292,12 +1292,8 @@ function AdminVisitsExport() {
                   <tr key={r.log_id} className="bg-white dark:bg-slate-950/50">
                     <td className="px-3 py-2.5 font-mono text-[11px] text-violet-800 dark:text-violet-200">{r.ticket_id}</td>
                     <td className="px-3 py-2.5 font-black tabular-nums text-violet-950 dark:text-white">{r.formatted_number}</td>
-                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.started_at ? String(r.started_at).replace("T", " ").slice(0, 19) : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.finished_at ? String(r.finished_at).replace("T", " ").slice(0, 19) : "—"}
-                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.started_at)}</td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.finished_at)}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
                       {r.queue_wait_minutes != null ? `${r.queue_wait_minutes} ${t("minShort")}` : "—"}
                     </td>
@@ -1508,9 +1504,7 @@ function AdminReviewsExport() {
               <tbody className="divide-y divide-violet-100 dark:divide-white/10">
                 {rows.map((r) => (
                   <tr key={`${r.ticket_id}-${r.review_at}`} className="bg-white dark:bg-slate-950/50">
-                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.review_at ? String(r.review_at).replace("T", " ").slice(0, 19) : "—"}
-                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.review_at)}</td>
                     <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
                       {String(r.student_last_name || "").trim()} {String(r.student_first_name || "").trim()}
                     </td>
@@ -1528,9 +1522,7 @@ function AdminReviewsExport() {
                       <div className="font-semibold">{r.school || "—"}</div>
                       <div className="text-[11px]">{r.specialty || ""}</div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.visit_finished_at ? String(r.visit_finished_at).replace("T", " ").slice(0, 19) : "—"}
-                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.visit_finished_at)}</td>
                     <td className="max-w-[280px] px-3 py-2.5 break-words text-violet-800 dark:text-violet-200">
                       {r.review_comment?.trim() ? r.review_comment : "—"}
                     </td>
@@ -1838,15 +1830,9 @@ function AdminWaitStats() {
                       <tr key={r.ticket_id} className="bg-white dark:bg-slate-950/50">
                         <td className="px-3 py-2.5 font-mono text-[11px] text-violet-800 dark:text-violet-200">{r.ticket_id}</td>
                         <td className="px-3 py-2.5 font-black tabular-nums text-violet-950 dark:text-white">{r.formatted_number}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                          {String(r.created_at).replace("T", " ").slice(0, 19)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                          {r.called_at ? String(r.called_at).replace("T", " ").slice(0, 19) : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                          {r.started_at ? String(r.started_at).replace("T", " ").slice(0, 19) : "—"}
-                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.created_at)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.called_at)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.started_at)}</td>
                         <td className="px-3 py-2.5 font-mono tabular-nums font-bold text-amber-700 dark:text-amber-300">
                           {r.wait_minutes}
                         </td>
@@ -1956,9 +1942,7 @@ function AdminQueuesBoard() {
                       <div className="font-semibold text-violet-950 dark:text-white">{r.owner_manager_name || "—"}</div>
                       {r.owner_manager_desk ? <div className="text-[11px] opacity-80">{r.owner_manager_desk}</div> : null}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {String(r.created_at || "").replace("T", " ").slice(0, 19)}
-                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

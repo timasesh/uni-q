@@ -10,7 +10,6 @@ import AdminApp from "./admin/AdminApp";
 import { useEffect, useState } from "react";
 import { useI18n } from "./i18n";
 import { useManagerContext } from "./context/ManagerContext";
-import ManagerWorkTimer from "./components/ManagerWorkTimer";
 import { AppLogo } from "./lib/brand";
 
 export default function App() {
@@ -73,7 +72,6 @@ export default function App() {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {isManager && managerId != null && <ManagerWorkTimer managerId={managerId} />}
               {!isManager && (
                 <label className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-2 py-1 backdrop-blur-sm">
                   <span className="sr-only">{t("langUi")}</span>
