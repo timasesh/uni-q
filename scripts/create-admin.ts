@@ -17,7 +17,8 @@ async function createAdmin() {
   `);
 
   const admins = [
-    { login: 'S.Mussa@almau.edu.kz', password: 'admin2026' }
+    { login: 'S.Mussa@almau.edu.kz', password: 'admin2026', name: 'Мұса Самал' },
+    { login: 'g.duisenbek@almau.edu.kz', password: 'admin2026', name: 'Дүйсенбек Гүлсана Мұханқызы' }
   ];
 
   for (const admin of admins) {

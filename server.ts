@@ -314,6 +314,7 @@ function ensureAdminSeed() {
 
   // Админ от вас (логин = email)
   ensureAdmin("S.Mussa@almau.edu.kz", "admin2026", "Мұса Самал");
+  ensureAdmin("g.duisenbek@almau.edu.kz", "admin2026", "Дүйсенбек Гүлсана Мұханқызы");
 }
 ensureAdminSeed();
 
