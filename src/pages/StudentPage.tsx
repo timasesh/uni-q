@@ -840,7 +840,9 @@ export default function StudentPage() {
                   {myTicket.status === "WAITING"
                     ? t("officeSchemeWaitingHint")
                     : deskWindow != null
-                      ? t("officeSchemeWindow").replace("{n}", String(deskWindow))
+                      ? deskWindow === 6
+                        ? "Окно руководителя"
+                        : t("officeSchemeWindow").replace("{n}", String(deskWindow))
                       : t("officeSchemeDefaultHint")}
                 </div>
               </div>

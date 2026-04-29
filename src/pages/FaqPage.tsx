@@ -13,7 +13,7 @@ export default function FaqPage() {
   const sections = getFaqSections(lang);
   const [openSection, setOpenSection] = useState<number | null>(null);
   const [openQuestion, setOpenQuestion] = useState<string | null>(null);
-  const [schemeView, setSchemeView] = useState<"general" | 1 | 2 | 3 | 4 | 5>("general");
+  const [schemeView, setSchemeView] = useState<"general" | 1 | 2 | 3 | 4 | 5 | 6>("general");
 
   useEffect(() => {
     const hasTicket = Boolean(localStorage.getItem("uniq.ticketId"));
@@ -121,7 +121,7 @@ export default function FaqPage() {
             <button
               key={n}
               type="button"
-              onClick={() => setSchemeView(n as 1 | 2 | 3 | 4 | 5)}
+              onClick={() => setSchemeView(n as 1 | 2 | 3 | 4 | 5 | 6)}
               className={cn(
                 "min-w-[2.5rem] rounded-xl border px-3 py-2 text-sm font-black tabular-nums transition",
                 schemeView === n
@@ -129,7 +129,7 @@ export default function FaqPage() {
                   : "border-violet-200 bg-white text-violet-900 hover:bg-violet-50 dark:border-white/15 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-white/10"
               )}
             >
-              {n}
+              {n === 6 ? "Окно руководителя" : n}
             </button>
           ))}
           <button

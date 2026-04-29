@@ -396,13 +396,13 @@ function countWords(text: string | null | undefined): number {
     .filter(Boolean).length;
 }
 
-/** Согласовано с клиентом `parseDeskWindowNumber`: номер окна 1…5 из поля стола. */
+/** Согласовано с клиентом `parseDeskWindowNumber`: номер окна 1…6 из поля стола. */
 function deskWindowFromDb(raw: string | null | undefined): number | null {
   if (raw == null) return null;
   const m = String(raw).match(/(\d+)/);
   if (!m) return null;
   const n = Number(m[1]);
-  if (!Number.isFinite(n) || n < 1 || n > 5) return null;
+  if (!Number.isFinite(n) || n < 1 || n > 6) return null;
   return n;
 }
 
@@ -1057,7 +1057,7 @@ app.post("/api/admin/managers", requireAdmin, (req, res) => {
   res.json({ ok: true, id: Number(info.lastInsertRowid) });
 });
 
-/** Назначить сотруднику окно 1…5 (в `desk_number` сохраняется «1»…«5»). У других сотрудников это окно сбрасывается. */
+/** Назначить сотруднику окно 1…6 (в `desk_number` сохраняется «1»…«6»). У других сотрудников это окно сбрасывается. */
 app.patch("/api/admin/managers/:id/desk", requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный id" });
@@ -1066,8 +1066,8 @@ app.patch("/api/admin/managers/:id/desk", requireAdmin, (req, res) => {
     raw === null || raw === undefined || raw === ""
       ? null
       : Number(raw);
-  if (window !== null && (!Number.isFinite(window) || window < 1 || window > 5)) {
-    return res.status(400).json({ error: "Окно должно быть от 1 до 5 или пусто" });
+  if (window !== null && (!Number.isFinite(window) || window < 1 || window > 6)) {
+    return res.status(400).json({ error: "Окно должно быть от 1 до 6 или пусто" });
   }
   const exists = db.prepare("SELECT 1 as ok FROM advisors WHERE id = ?").get(id) as { ok: 1 } | undefined;
   if (!exists) return res.status(404).json({ error: "Сотрудник не найден" });

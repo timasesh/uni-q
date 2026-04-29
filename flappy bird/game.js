@@ -67,13 +67,23 @@ let audioCtx = null;
 const bgMusic = new Audio('./music.ogg');
 bgMusic.loop = true;
 bgMusic.volume = 0.25;
+bgMusic.preload = 'auto';
+bgMusic.setAttribute('playsinline', 'true');
 let _bgMusicUnlocked = false;
+function playBackgroundMusic() {
+  if (isMuted) return;
+  bgMusic.play().catch(() => {});
+}
 function _unlockBgMusic() {
-  if (_bgMusicUnlocked) return;
   _bgMusicUnlocked = true;
-  if (!isMuted) bgMusic.play().catch(() => {});
+  playBackgroundMusic();
 }
 document.addEventListener('click', _unlockBgMusic, { once: true });
+document.addEventListener('touchstart', _unlockBgMusic, { once: true, passive: true });
+document.addEventListener('keydown', _unlockBgMusic, { once: true });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _bgMusicUnlocked) playBackgroundMusic();
+});
 
 // --- Messages ---
 const deathMessages = [
@@ -98,6 +108,9 @@ const deathMessages = [
   "Пары начались, эдвайзинг закрыт 🚪",
   "Твой GPA не позволяет пройти дальше 📉",
   "Научрук отверг твою тему в последний момент 😱",
+  "Бекарыс пропускает вас в не очереди",
+  "Тима легенда",
+  "Айбек прогульщик",
 ];
 
 // --- Player ---
@@ -179,6 +192,7 @@ const SVG_PLAY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><
 function toggleMute() {
   isMuted = !isMuted;
   bgMusic.muted = isMuted;
+  if (!isMuted) playBackgroundMusic();
   localStorage.setItem('almauMuted', isMuted);
   const icon = isMuted ? SVG_SOUND_OFF : SVG_SOUND_ON;
   document.getElementById('muteBtn').innerHTML = icon;
@@ -767,6 +781,7 @@ function startGame() {
   player.vy = 0; player.angle = 0; player.alive = true;
 
   gameState = 'ready';
+  if (_bgMusicUnlocked) playBackgroundMusic();
 }
 
 function goToMainMenu() {

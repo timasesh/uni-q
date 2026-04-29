@@ -125,6 +125,8 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const sockRef = useRef<Socket | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const logoTapCountRef = useRef(0);
+  const [managerGameOpen, setManagerGameOpen] = useState(false);
   const [showAllQueue, setShowAllQueue] = useState(false);
   const [autoCall, setAutoCall] = useState(false);
   const [autoCallAfterDone, setAutoCallAfterDone] = useState(false);
@@ -142,6 +144,14 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const [inServiceCategory, setInServiceCategory] = useState<"RETAKE" | "PAYMENT" | "DISCIPLINE" | "OTHER" | "">("");
   const [inServiceComment, setInServiceComment] = useState("");
   const [inServiceStudentComment, setInServiceStudentComment] = useState("");
+
+  const onManagerLogoTap = () => {
+    logoTapCountRef.current += 1;
+    if (logoTapCountRef.current >= 10) {
+      logoTapCountRef.current = 0;
+      setManagerGameOpen(true);
+    }
+  };
 
   useEffect(() => {
     const s = io({ transports: ["websocket", "polling"] });
@@ -512,9 +522,15 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
       <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 p-5 text-white shadow-lg shadow-violet-500/25 dark:from-violet-950 dark:via-indigo-950 dark:to-slate-950">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">
-            <div className="mt-0.5 flex h-11 shrink-0 items-center justify-center rounded-xl bg-white/15 px-1.5 py-1 ring-1 ring-white/25">
+            <button
+              type="button"
+              onClick={onManagerLogoTap}
+              className="mt-0.5 flex h-11 shrink-0 items-center justify-center rounded-xl bg-white/15 px-1.5 py-1 ring-1 ring-white/25"
+              title="Логотип"
+              aria-label="Логотип"
+            >
               <AppLogo className="h-9 w-auto max-h-9 max-w-[120px] object-contain object-center brightness-0 invert" />
-            </div>
+            </button>
             <div className="min-w-0">
             <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80">{t("managerPanel")}</div>
             <div className="mt-1 text-xl font-black tracking-tight">{me.name}</div>
@@ -787,13 +803,37 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
         </div>
       </div>
 
+      {managerGameOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6">
+          <button
+            type="button"
+            className="absolute inset-0 bg-blue-950/50 backdrop-blur-sm"
+            onClick={() => setManagerGameOpen(false)}
+            aria-label={t("close")}
+          />
+          <div className="relative z-10 w-full max-w-[460px] rounded-2xl border border-sky-100 bg-white p-3 shadow-xl dark:border-white/10 dark:bg-slate-950">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-black text-violet-900 dark:text-sky-100">Мини-игра</div>
+              <button
+                type="button"
+                onClick={() => setManagerGameOpen(false)}
+                className="rounded-lg border border-sky-200 px-3 py-1.5 text-xs font-extrabold text-blue-900 hover:bg-blue-900 hover:text-white dark:border-white/15 dark:text-sky-200 dark:hover:bg-sky-500/20"
+              >
+                {t("close")}
+              </button>
+            </div>
+            <iframe src="/flappy-bird/" title="Flappy Bird" className="h-[74vh] min-h-[560px] w-full rounded-xl border border-violet-100 dark:border-white/10" />
+          </div>
+        </div>
+      )}
+
       {settingsOpen && (
         <div className="fixed inset-0 z-50">
           <div
             className="absolute inset-0 bg-blue-950/25 backdrop-blur-sm"
             onClick={() => setSettingsOpen(false)}
           />
-          <div className="absolute inset-x-0 top-16 mx-auto max-w-2xl px-4">
+          <div className="absolute inset-x-0 top-16 mx-auto max-h-[calc(100vh-5rem)] max-w-2xl overflow-y-auto px-4 pb-4">
             <div className="rounded-3xl border border-sky-100/70 bg-white/90 p-6 shadow-xl shadow-sky-500/10 backdrop-blur dark:border-white/10 dark:bg-blue-950/90">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -879,7 +919,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
       {historyOpen && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-blue-950/25 backdrop-blur-sm" onClick={() => setHistoryOpen(false)} />
-          <div className="absolute inset-x-0 top-10 mx-auto max-w-5xl px-4">
+          <div className="absolute inset-x-0 top-10 mx-auto max-h-[calc(100vh-3rem)] max-w-5xl overflow-y-auto px-4 pb-4">
             <div className="rounded-3xl border border-sky-100/70 bg-white/90 p-6 shadow-xl shadow-sky-500/10 backdrop-blur dark:border-white/10 dark:bg-blue-950/90">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
