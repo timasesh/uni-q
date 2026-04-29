@@ -813,6 +813,7 @@ type AdminVisitExportRow = {
   specialty: string | null;
   language_section: string | null;
   course: string | null;
+  study_duration_years?: number | null;
   advisor_name: string | null;
   advisor_desk: string | null;
   case_type: string | null;
@@ -1190,16 +1191,22 @@ function AdminVisitsExport() {
               <option value="CANCELLED">{ticketStatusLabel("CANCELLED", t)}</option>
             </select>
           </label>
-          <label className="flex min-w-[160px] flex-col gap-1.5">
+          <label className="flex min-w-[240px] flex-col gap-1.5">
             <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
               {t("adminFilterSchool")}
             </span>
-            <input
+            <select
               value={visitSchool}
               onChange={(e) => setVisitSchool(e.target.value)}
-              placeholder={t("adminFilterSchoolPh")}
               className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-            />
+            >
+              <option value="">{t("adminFilterAny")}</option>
+              {SCHOOL_NAMES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </label>
           <button
             type="button"
@@ -1273,6 +1280,7 @@ function AdminVisitsExport() {
                     t("historyTotalTime"),
                     t("adminVisitsColStudent"),
                     t("adminVisitsColSchool"),
+                    "ТиПО (годы)",
                     t("adminVisitsColManager"),
                     t("adminVisitsColDesk"),
                     t("adminVisitsColStatus"),
@@ -1309,6 +1317,9 @@ function AdminVisitsExport() {
                     <td className="max-w-[200px] px-3 py-2.5 text-violet-800 dark:text-violet-200">
                       <div className="font-semibold">{r.school || "—"}</div>
                       <div className="text-[11px]">{r.specialty || ""}</div>
+                    </td>
+                    <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
+                      {r.study_duration_years != null ? String(r.study_duration_years) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_name || "—"}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_desk || "—"}</td>
@@ -1446,16 +1457,22 @@ function AdminReviewsExport() {
               ))}
             </select>
           </label>
-          <label className="flex min-w-[160px] flex-col gap-1.5">
+          <label className="flex min-w-[240px] flex-col gap-1.5">
             <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
               {t("adminFilterSchool")}
             </span>
-            <input
+            <select
               value={reviewSchool}
               onChange={(e) => setReviewSchool(e.target.value)}
-              placeholder={t("adminFilterSchoolPh")}
               className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-            />
+            >
+              <option value="">{t("adminFilterAny")}</option>
+              {SCHOOL_NAMES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </label>
           <button
             type="button"
@@ -1544,6 +1561,10 @@ type AdminWaitRow = {
   student_first_name: string | null;
   student_last_name: string | null;
   school: string | null;
+  specialty?: string | null;
+  language_section?: string | null;
+  course?: string | null;
+  study_duration_years?: number | null;
   status: string;
   created_at: string;
   called_at: string | null;
@@ -1587,6 +1608,7 @@ function AdminWaitStats() {
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
   const [to, setTo] = useState(() => localYmdToday());
   const [status, setStatus] = useState("");
+  const [school, setSchool] = useState("");
   const [minWait, setMinWait] = useState("");
   const [maxWait, setMaxWait] = useState("");
   const [data, setData] = useState<AdminWaitResponse | null>(null);
@@ -1602,6 +1624,7 @@ function AdminWaitStats() {
   const buildQs = (csv: boolean) => {
     const qs = new URLSearchParams({ from, to });
     if (status.trim()) qs.set("status", status.trim().toUpperCase());
+    if (school.trim()) qs.set("school", school.trim());
     const mn = Number(minWait);
     const mx = Number(maxWait);
     if (minWait.trim() !== "" && Number.isFinite(mn)) qs.set("minWait", String(mn));
@@ -1690,6 +1713,23 @@ function AdminWaitStats() {
               {TICKET_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {ticketStatusLabel(s, t)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-w-[240px] flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminFilterSchool")}
+            </span>
+            <select
+              value={school}
+              onChange={(e) => setSchool(e.target.value)}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            >
+              <option value="">{t("adminFilterAny")}</option>
+              {SCHOOL_NAMES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
                 </option>
               ))}
             </select>
@@ -1801,6 +1841,51 @@ function AdminWaitStats() {
                 <div className="mt-1 text-2xl font-black tabular-nums text-violet-950 dark:text-white">{data.summary.count}</div>
               </div>
             </div>
+            {data.rows.length > 0 && (
+              <div className="mb-6 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 dark:border-white/10 dark:bg-slate-900/70">
+                <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                  Распределение ожидания
+                </div>
+                {(() => {
+                  const buckets = [
+                    { label: "0-5", min: 0, max: 5 },
+                    { label: "6-10", min: 6, max: 10 },
+                    { label: "11-20", min: 11, max: 20 },
+                    { label: "21-30", min: 21, max: 30 },
+                    { label: "31-60", min: 31, max: 60 },
+                    { label: "60+", min: 61, max: Number.POSITIVE_INFINITY },
+                  ];
+                  const counts = buckets.map((bucket) =>
+                    data.rows.filter((r) => {
+                      const w = Number(r.wait_minutes);
+                      return Number.isFinite(w) && w >= bucket.min && w <= bucket.max;
+                    }).length
+                  );
+                  const maxCount = Math.max(1, ...counts);
+                  return (
+                    <div className="flex flex-wrap items-end gap-3">
+                      {buckets.map((bucket, idx) => {
+                        const count = counts[idx] || 0;
+                        const pct = (count / maxCount) * 100;
+                        return (
+                          <div key={bucket.label} className="flex w-[68px] flex-col items-center">
+                            <div className="flex h-28 items-end">
+                              <div
+                                className="w-10 rounded-t-md bg-gradient-to-t from-violet-600 to-fuchsia-500"
+                                style={{ height: `${count > 0 ? Math.max(8, pct) : 0}%` }}
+                                title={`${bucket.label}: ${count}`}
+                              />
+                            </div>
+                            <div className="mt-1 text-[10px] font-bold text-violet-700 dark:text-violet-300">{bucket.label}</div>
+                            <div className="text-[10px] font-black text-violet-900 dark:text-white">{count}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
             {data.rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-400">{t("adminWaitEmpty")}</div>
             ) : (

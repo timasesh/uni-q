@@ -71,11 +71,11 @@ export default function StudentPage() {
   const [form, setForm] = useState<StudentForm>({
     firstName: "",
     lastName: "",
-    schoolId: SCHOOL_ENTRIES[0]?.id ?? "s0",
+    schoolId: "",
     specialtyCode: "",
-    languageSection: "ru",
-    course: "1",
-    studyDurationYears: "3",
+    languageSection: "",
+    course: "",
+    studyDurationYears: "",
   });
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export default function StudentPage() {
     };
   }, []);
 
-  const schoolApi = schoolApiNameById(form.schoolId) ?? SCHOOL_ENTRIES[0]?.apiName ?? "";
+  const schoolApi = schoolApiNameById(form.schoolId) ?? "";
   const specialtyOptions = useMemo(() => specialtiesForSchool(schoolApi), [schoolApi]);
 
   const canRegisterForm = useMemo(() => {
@@ -121,7 +121,7 @@ export default function StudentPage() {
     }
     setForm((p) => {
       if (specs.some((s) => s.code === p.specialtyCode)) return p;
-      return { ...p, specialtyCode: specs[0]?.code ?? "" };
+      return { ...p, specialtyCode: "" };
     });
   }, [schoolApi]);
 
@@ -238,6 +238,7 @@ export default function StudentPage() {
     prevStatusRef.current = next;
     if (!next) return;
     if (prev !== "CALLED" && next === "CALLED") {
+      window.dispatchEvent(new Event("uniq:student-called"));
       try {
         if (!callSoundRef.current) {
           callSoundRef.current = new Audio("/sound/song.mp3");
@@ -704,6 +705,7 @@ export default function StudentPage() {
               onChange={(e) => setForm((p) => ({ ...p, schoolId: e.target.value }))}
               required
             >
+              <option value="">{t("chooseSchool")}</option>
               {SCHOOL_ENTRIES.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.label}
@@ -717,8 +719,11 @@ export default function StudentPage() {
               disabled={specialtyOptions.length === 0}
               required
             >
+              <option value="">{t("chooseSpecialty")}</option>
               {specialtyOptions.length === 0 ? (
-                <option value="">{t("specialtyEmpty")}</option>
+                <option value="" disabled>
+                  {t("specialtyEmpty")}
+                </option>
               ) : (
                 specialtyOptions.map((sp) => (
                   <option key={sp.code} value={sp.code}>
@@ -731,7 +736,9 @@ export default function StudentPage() {
               className="ui-input"
               value={form.languageSection}
               onChange={(e) => setForm((p) => ({ ...p, languageSection: e.target.value }))}
+              required
             >
+              <option value="">{t("chooseLanguageSection")}</option>
               {langOpts.map((o) => (
                 <option key={o.value} value={o.value}>
                   {t(o.key)}
@@ -742,7 +749,9 @@ export default function StudentPage() {
               className="ui-input"
               value={form.course}
               onChange={(e) => setForm((p) => ({ ...p, course: e.target.value }))}
+              required
             >
+              <option value="">{t("chooseCourse")}</option>
               {(["1", "2", "3", "4"] as const).map((n) => (
                 <option key={n} value={n}>
                   {t(`courseNum${n}` as "courseNum1")}
@@ -753,7 +762,9 @@ export default function StudentPage() {
               className="ui-input sm:col-span-2"
               value={form.studyDurationYears}
               onChange={(e) => setForm((p) => ({ ...p, studyDurationYears: e.target.value }))}
+              required
             >
+              <option value="">{t("chooseStudyDuration")}</option>
               <option value="2">ТиПО · 2 года обучения</option>
               <option value="3">ТиПО · 3 года обучения</option>
             </select>

@@ -166,6 +166,7 @@ export async function pgAdminWaitTimes(
   from: string,
   to: string,
   status?: string,
+  school?: string,
   minWait?: number | null,
   maxWait?: number | null
 ): Promise<{
@@ -218,6 +219,10 @@ export async function pgAdminWaitTimes(
   );
   let filtered = rows.filter((r) => r.wait_minutes != null && Number(r.wait_minutes) >= 0);
   if (status) filtered = filtered.filter((r) => String(r.status || "").toUpperCase() === String(status).toUpperCase());
+  if (school) {
+    const sq = String(school).toLowerCase();
+    filtered = filtered.filter((r) => String(r.school || "").toLowerCase().includes(sq));
+  }
   if (minWait != null) filtered = filtered.filter((r) => Number(r.wait_minutes) >= minWait);
   if (maxWait != null) filtered = filtered.filter((r) => Number(r.wait_minutes) <= maxWait);
   const waits = filtered.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);

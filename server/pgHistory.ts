@@ -89,6 +89,7 @@ export async function pgAdminVisitsBetween(from: string, to: string): Promise<an
        l.advisor_desk,
        l.comment,
        t.student_comment,
+       t.study_duration_years,
        l.case_type,
        l.is_repeat
      FROM ticket_visit_log l
@@ -122,9 +123,11 @@ export async function pgAdvisorVisitRows(advisorId: number, dayYmd: string, limi
        l.advisor_name,
        l.advisor_desk,
        l.comment,
+       t.study_duration_years,
        l.case_type,
        l.is_repeat
      FROM ticket_visit_log l
+     LEFT JOIN tickets t ON t.id = l.ticket_id
      WHERE l.advisor_id = $1
        AND (l.finished_at AT TIME ZONE $3)::date = $2::date
      ORDER BY l.finished_at DESC NULLS LAST, l.id DESC

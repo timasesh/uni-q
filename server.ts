@@ -100,6 +100,15 @@ app.use(
   })
 );
 
+// Мини-игра для студентов (открывается отдельной кнопкой в шапке).
+const flappyDir = path.join(process.cwd(), "flappy bird");
+if (fs.existsSync(flappyDir)) {
+  app.use("/flappy-bird", express.static(flappyDir));
+  app.get("/flappy-bird", (_req, res) => {
+    res.sendFile(path.join(flappyDir, "index.html"));
+  });
+}
+
 // --- DB (файл на диске; при необходимости SQLITE_PATH в .env; на Render см. DEPLOY-RENDER.md)
 const dbDir = path.dirname(path.resolve(SQLITE_PATH));
 if (!fs.existsSync(dbDir)) {
@@ -1200,6 +1209,7 @@ app.get("/api/managers/me/history", requireManager, async (req, res) => {
          l.advisor_desk,
          l.comment,
          t.student_comment,
+         t.study_duration_years,
          l.case_type,
          l.is_repeat,
          CAST(ROUND((julianday(l.started_at) - julianday(l.created_at)) * 24 * 60) AS INTEGER) AS queue_wait_minutes,
@@ -1226,14 +1236,15 @@ app.get("/api/managers/me/history", requireManager, async (req, res) => {
   if (isPgHistoryEnabled()) {
     try {
       rows = await pgAdvisorVisitRows(advisorId, dayFilter, limit);
-      const ticketStmt = db.prepare(`SELECT status, finished_at, student_comment FROM tickets WHERE id = ?`);
+      const ticketStmt = db.prepare(`SELECT status, finished_at, student_comment, study_duration_years FROM tickets WHERE id = ?`);
       for (const r of rows) {
         const tid = Number(r.id);
         const t = ticketStmt.get(tid) as
-          | { status?: string; finished_at?: unknown; student_comment?: unknown }
+          | { status?: string; finished_at?: unknown; student_comment?: unknown; study_duration_years?: unknown }
           | undefined;
         r.reopen_eligible = reopenEligibleForLogRow(r.finished_at, t);
         r.student_comment = t?.student_comment ?? null;
+        r.study_duration_years = t?.study_duration_years ?? null;
         r.queue_wait_minutes = minutesBetweenTimestamps(r.created_at, r.started_at);
         r.desk_service_minutes = minutesBetweenTimestamps(r.started_at, r.finished_at);
         r.total_minutes = minutesBetweenTimestamps(r.created_at, r.finished_at);
@@ -1865,6 +1876,7 @@ app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
   const statusFilter = String(req.query.status || "").trim().toUpperCase();
   const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
   const format = String(req.query.format || "json").toLowerCase();
+  const schoolQ = String(req.query.school || "").trim().toLowerCase();
 
   const minWait = Number(req.query.minWait ?? "");
   const maxWait = Number(req.query.maxWait ?? "");
@@ -1878,6 +1890,7 @@ app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
         from,
         to,
         statusFilter && validStatuses.has(statusFilter) ? statusFilter : undefined,
+        schoolQ || undefined,
         Number.isFinite(minWait) ? minWait : null,
         Number.isFinite(maxWait) ? maxWait : null
       );
@@ -1943,6 +1956,7 @@ app.get("/api/admin/stats/wait-times", requireAdmin, async (req, res) => {
     const raw = [...active, ...terminal];
     rows = raw.filter((r) => r.wait_minutes != null && Number.isFinite(Number(r.wait_minutes)) && Number(r.wait_minutes) >= 0);
     if (statusFilter && validStatuses.has(statusFilter)) rows = rows.filter((r) => r.status === statusFilter);
+    if (schoolQ) rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
     if (Number.isFinite(minWait)) rows = rows.filter((r) => Number(r.wait_minutes) >= minWait);
     if (Number.isFinite(maxWait)) rows = rows.filter((r) => Number(r.wait_minutes) <= maxWait);
     const waits = rows.map((r) => Number(r.wait_minutes)).sort((a, b) => a - b);
@@ -2197,6 +2211,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
          l.advisor_desk,
          l.comment,
          t.student_comment,
+         t.study_duration_years,
          l.case_type,
          l.is_repeat
        FROM ticket_visit_log l
@@ -2240,7 +2255,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
 
   if (format === "csv") {
     const header =
-      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;manager;desk;case_type;comment;student_comment;called_at;started_at;finished_at;queue_wait_min;service_min;total_min";
+      "ticket_id;queue_number;finished_date;status;repeat_call;student_last;student_first;school;specialty;lang_section;course;study_duration_years;manager;desk;case_type;comment;student_comment;called_at;started_at;finished_at;queue_wait_min;service_min;total_min";
     const lines = rows.map((r) =>
       [
         r.ticket_id,
@@ -2254,6 +2269,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
         r.specialty,
         r.language_section,
         r.course,
+        r.study_duration_years,
         r.advisor_name,
         r.advisor_desk,
         r.case_type,
@@ -2387,7 +2403,13 @@ if (NODE_ENV === "production") {
     app.use(express.static(dist));
     // Express 5 / path-to-regexp: нельзя использовать app.get('*', …) — падает с PathError.
     app.use((req, res, next) => {
-      if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/socket.io")) return next();
+      if (
+        req.method !== "GET" ||
+        req.path.startsWith("/api") ||
+        req.path.startsWith("/socket.io") ||
+        req.path.startsWith("/flappy-bird")
+      )
+        return next();
       res.sendFile(path.join(dist, "index.html"));
     });
   }

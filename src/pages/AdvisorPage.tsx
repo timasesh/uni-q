@@ -929,6 +929,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                         t("historyStudent"),
                         t("historySchoolSpec"),
                         t("historyDeptCourse"),
+                        "ТиПО",
                         t("historyStart"),
                         t("historyQueueWait"),
                         t("historyServiceTime"),
@@ -966,6 +967,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
                           {r.language_section || ""} · {r.course || ""}
+                        </td>
+                        <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
+                          {r.study_duration_years != null ? `ТиПО ${r.study_duration_years} г.` : "—"}
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">{timeHHMM(r.started_at)}</td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">

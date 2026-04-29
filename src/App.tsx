@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Gamepad2 } from "lucide-react";
 import StudentPage from "./pages/StudentPage";
 import StudentEntryPage from "./pages/StudentEntryPage";
 import FaqPage from "./pages/FaqPage";
@@ -7,7 +8,7 @@ import AdvisorPage from "./pages/AdvisorPage";
 import AdvisorSettingsPage from "./pages/AdvisorSettingsPage";
 import AdminApp from "./admin/AdminApp";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { useManagerContext } from "./context/ManagerContext";
 import ManagerWorkTimer from "./components/ManagerWorkTimer";
@@ -19,6 +20,7 @@ export default function App() {
   const isAdmin = loc.pathname.startsWith("/admin");
   const { managerId } = useManagerContext();
   const { t, lang, setLang } = useI18n();
+  const gameWindowRef = useRef<Window | null>(null);
 
   const [managerDark, setManagerDark] = useState(false);
 
@@ -54,6 +56,26 @@ export default function App() {
     else root.classList.remove("dark");
   }, [applyManagerDark, isAdmin]);
 
+  useEffect(() => {
+    const onCalled = () => {
+      if (gameWindowRef.current && !gameWindowRef.current.closed) {
+        try {
+          gameWindowRef.current.close();
+        } catch {
+          // ignore cross-window close issues
+        }
+      }
+      gameWindowRef.current = null;
+    };
+    window.addEventListener("uniq:student-called", onCalled);
+    return () => window.removeEventListener("uniq:student-called", onCalled);
+  }, []);
+
+  const openGame = () => {
+    const w = window.open("/flappy-bird/", "uniq-flappy-bird", "width=460,height=760");
+    if (w) gameWindowRef.current = w;
+  };
+
   if (loc.pathname.startsWith("/admin")) {
     return <AdminApp />;
   }
@@ -73,6 +95,17 @@ export default function App() {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {!isManager && (
+                <button
+                  type="button"
+                  onClick={openGame}
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/10 px-2.5 py-1.5 text-white backdrop-blur-sm hover:bg-white/20"
+                  title="Мини-игра"
+                  aria-label="Открыть мини-игру"
+                >
+                  <Gamepad2 size={16} />
+                </button>
+              )}
               {!isManager && (
                 <label className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-2 py-1 backdrop-blur-sm">
                   <span className="sr-only">{t("langUi")}</span>
