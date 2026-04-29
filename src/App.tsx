@@ -10,6 +10,7 @@ import AdminApp from "./admin/AdminApp";
 import { useEffect, useState } from "react";
 import { useI18n } from "./i18n";
 import { useManagerContext } from "./context/ManagerContext";
+import ManagerWorkTimer from "./components/ManagerWorkTimer";
 import { AppLogo } from "./lib/brand";
 
 export default function App() {
@@ -102,6 +103,7 @@ export default function App() {
       </header>
 
       <main className="ui-shell">
+        {isManager && managerId != null && <ManagerWorkTimer managerId={managerId} hidden />}
         <Routes>
           <Route path="/" element={<StudentEntryPage />} />
           <Route path="/student" element={<StudentPage />} />

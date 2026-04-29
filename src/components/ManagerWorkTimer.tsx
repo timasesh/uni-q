@@ -15,7 +15,10 @@ function formatWorkHm(ms: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-type Props = { managerId: number };
+type Props = {
+  managerId: number;
+  hidden?: boolean;
+};
 
 function makeTabId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -50,7 +53,7 @@ function tryAcquireWorkLock(managerId: number, tabId: string, ttlMs = 12_000): b
   return true;
 }
 
-export default function ManagerWorkTimer({ managerId }: Props) {
+export default function ManagerWorkTimer({ managerId, hidden = false }: Props) {
   const [sessionActive, setSessionActive] = useState(false);
   const [isLeader, setIsLeader] = useState(true);
   const [serverWorked, setServerWorked] = useState(0);
@@ -176,6 +179,8 @@ export default function ManagerWorkTimer({ managerId }: Props) {
   }, [managerId, isLeader]);
 
   const shownMs = isLeader ? worked + extra : serverWorked;
+
+  if (hidden) return null;
 
   return (
     <span className="rounded-lg bg-white/10 px-2 py-1 font-mono text-sm font-black tabular-nums text-white ring-1 ring-white/20">
