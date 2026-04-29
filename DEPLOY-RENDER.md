@@ -57,7 +57,7 @@
 | `TRUST_PROXY` | да за HTTPS | `1` — чтобы за прокси Render корректно работали secure-cookie и IP (уже в `render.yaml`). |
 | `SESSION_COOKIE_SECURE` | редко | `0` только для нестандартной отладки за прокси без HTTPS. |
 | `DATABASE_URL` | нет | URI PostgreSQL Supabase. Включает запись и чтение **`ticket_visit_log`** в облаке (история визитов). Остальные таблицы по-прежнему в SQLite. |
-| `UNIQ_REPORT_TZ` | нет | IANA-таймзона для фильтра дат по `finished_at` в Postgres (по умолчанию `UTC`). |
+| `UNIQ_REPORT_TZ` | нет | IANA-таймзона для фильтра дат/отчётов в Postgres (рекомендуется `Asia/Almaty`, теперь по умолчанию она же). |
 | `DATABASE_SSL` | нет | `0` — отключить SSL к Postgres (обычно не нужно для Supabase). |
 | `DATABASE_DNS_IPV4_FIRST` | нет | `0` — не вызывать `dns.setDefaultResultOrder("ipv4first")` (по умолчанию включено при `DATABASE_URL`). |
 

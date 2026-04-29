@@ -2,7 +2,7 @@ import pg from "pg";
 import type Database from "better-sqlite3";
 
 let pool: pg.Pool | null = null;
-const REPORT_TZ = process.env.UNIQ_REPORT_TZ || "UTC";
+const REPORT_TZ = process.env.UNIQ_REPORT_TZ || "Asia/Almaty";
 
 export function isPgCoreEnabled(): boolean {
   return Boolean(process.env.DATABASE_URL?.trim());

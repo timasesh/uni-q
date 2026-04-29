@@ -5,7 +5,7 @@
 import pg from "pg";
 
 /** Часовой пояс для фильтрации по календарной дате (как date(..., 'localtime') в SQLite). */
-const REPORT_TZ = process.env.UNIQ_REPORT_TZ || "UTC";
+const REPORT_TZ = process.env.UNIQ_REPORT_TZ || "Asia/Almaty";
 
 let pool: pg.Pool | null = null;
 
