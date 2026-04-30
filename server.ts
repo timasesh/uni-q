@@ -506,6 +506,31 @@ function parseYmdParam(s: string): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
 }
 
+const ADMIN_STATS_PG_TIMEOUT_MS = Number(process.env.ADMIN_STATS_PG_TIMEOUT_MS || 1800);
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}: timeout ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function fastPg<T>(label: string, run: () => Promise<T>): Promise<T | null> {
+  try {
+    return await withTimeout(run(), ADMIN_STATS_PG_TIMEOUT_MS, label);
+  } catch (e) {
+    console.warn(`[${label}] fast fallback`, e);
+    return null;
+  }
+}
+
 function parseCourse(course: string | null | undefined): number | null {
   if (!course) return null;
   const m = String(course).match(/\d+/);
@@ -1888,10 +1913,9 @@ app.post("/api/stats/event", async (req, res) => {
 
 app.get("/api/admin/stats/summary", requireAdmin, async (_req, res) => {
   if (isPgCoreEnabled()) {
-    try {
-      return res.json(await pgAdminSummary());
-    } catch (e) {
-      console.error("[pg admin summary]", e);
+    const pg = await fastPg("pg admin summary", () => pgAdminSummary());
+    if (pg) {
+      return res.json(pg);
     }
   }
   const events = db.prepare(`SELECT event_type, COUNT(*) as count FROM stats_events GROUP BY event_type`).all() as {
@@ -1921,10 +1945,10 @@ app.get("/api/admin/stats/faq-no-queue", requireAdmin, async (req, res) => {
   if (from && to && from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
   let rows: { day: string; count: number }[];
   if (isPgCoreEnabled()) {
-    try {
-      rows = await pgFaqNoQueue(from, to);
-    } catch (e) {
-      console.error("[pg faq no queue]", e);
+    const pgRows = await fastPg("pg faq no queue", () => pgFaqNoQueue(from, to));
+    if (pgRows) {
+      rows = pgRows;
+    } else {
       let sql = `SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
            FROM stats_events
            WHERE event_type = 'faq_no_queue'`;
@@ -2150,16 +2174,15 @@ app.get("/api/admin/stats/bookings", requireAdmin, async (req, res) => {
   const schoolQ = String(req.query.school || "").trim().toLowerCase();
   let rows: any[] = [];
   if (isPgCoreEnabled()) {
-    try {
-      rows = await pgAdminBookings(
+    rows =
+      (await fastPg("pg bookings", () =>
+        pgAdminBookings(
         from,
         to,
         statusFilter && validStatuses.has(statusFilter) ? statusFilter : undefined,
         schoolQ || undefined
-      );
-    } catch (e) {
-      console.error("[pg bookings]", e);
-    }
+        )
+      )) ?? [];
   }
   if (rows.length === 0) {
     let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
@@ -2220,10 +2243,9 @@ app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
     return res.status(400).json({ error: "Укажите дату в формате YYYY-MM-DD" });
   }
   if (isPgCoreEnabled()) {
-    try {
-      return res.json(await pgAdminLoad(dateStr));
-    } catch (e) {
-      console.error("[pg admin load]", e);
+    const pg = await fastPg("pg admin load", () => pgAdminLoad(dateStr));
+    if (pg) {
+      return res.json(pg);
     }
   }
   const year = Number(dateStr.slice(0, 4));
@@ -2331,10 +2353,10 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
 
   let rows: any[];
   if (isPgHistoryEnabled()) {
-    try {
-      rows = await pgAdminVisitsBetween(from, to);
-    } catch (e) {
-      console.error("[admin visits pg]", e);
+    const pgRows = await fastPg("admin visits pg", () => pgAdminVisitsBetween(from, to));
+    if (pgRows) {
+      rows = pgRows;
+    } else {
       console.warn(
         "[admin visits] ответ из SQLite: PostgreSQL недоступен. На Render используйте pooler Supabase (IPv4), см. DEPLOY-RENDER.md."
       );
@@ -2426,16 +2448,15 @@ app.get("/api/admin/stats/reviews", requireAdmin, async (req, res) => {
 
   let rows: any[] = [];
   if (isPgCoreEnabled()) {
-    try {
-      rows = await pgAdminReviews(
+    rows =
+      (await fastPg("pg admin reviews", () =>
+        pgAdminReviews(
         from,
         to,
         starsEq != null && Number.isFinite(starsEq) && starsEq >= 1 && starsEq <= 5 ? Math.round(starsEq) : null,
         schoolQ || undefined
-      );
-    } catch (e) {
-      console.error("[pg admin reviews]", e);
-    }
+        )
+      )) ?? [];
   }
   if (rows.length === 0) {
     let sql = `SELECT
