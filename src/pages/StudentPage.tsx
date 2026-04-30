@@ -103,6 +103,20 @@ export default function StudentPage() {
 
   const [form, setForm] = useState<StudentForm>(EMPTY_STUDENT_FORM);
 
+  const persistLastResult = (ticket: Ticket | null | undefined) => {
+    if (!ticket || ticket.status !== "DONE") return;
+    const hasPayload = Boolean(ticket.student_comment || ticket.comment || ticket.manager_attachment_data_url);
+    if (!hasPayload) return;
+    setLastResult({
+      ticketId: ticket.id,
+      student_comment: ticket.student_comment ?? null,
+      comment: ticket.comment ?? null,
+      manager_attachment_name: ticket.manager_attachment_name ?? null,
+      manager_attachment_data_url: ticket.manager_attachment_data_url ?? null,
+      finishedAtIso: new Date().toISOString(),
+    });
+  };
+
   useEffect(() => {
     const raw = localStorage.getItem(STUDENT_FORM_DRAFT_KEY);
     if (!raw) return;
@@ -378,16 +392,7 @@ export default function StudentPage() {
   }, [myTicket?.id, myTicket?.status, myTicket?.has_review, reviewDismissed]);
 
   useEffect(() => {
-    if (!myTicket || myTicket.status !== "DONE") return;
-    if (!myTicket.student_comment && !myTicket.comment && !myTicket.manager_attachment_data_url) return;
-    setLastResult({
-      ticketId: myTicket.id,
-      student_comment: myTicket.student_comment ?? null,
-      comment: myTicket.comment ?? null,
-      manager_attachment_name: myTicket.manager_attachment_name ?? null,
-      manager_attachment_data_url: myTicket.manager_attachment_data_url ?? null,
-      finishedAtIso: new Date().toISOString(),
-    });
+    persistLastResult(myTicket);
   }, [myTicket]);
 
   useEffect(() => {
@@ -507,11 +512,13 @@ export default function StudentPage() {
     }
     setReviewThanks(true);
     setReviewDismissed(true);
+    persistLastResult(myTicket);
     setReviewSubmitting(false);
     void refreshTicket(myTicket.id);
   };
 
   const skipReview = () => {
+    persistLastResult(myTicket);
     setReviewDismissed(true);
     setReviewOpen(false);
   };
