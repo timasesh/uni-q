@@ -177,7 +177,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   advisor_department TEXT,
   comment TEXT,
   case_type TEXT,
-  student_comment TEXT
+  student_comment TEXT,
+  manager_attachment_name TEXT,
+  manager_attachment_data_url TEXT,
+  send_email_requested INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -234,6 +237,15 @@ function migrateDb() {
   }
   if (!ticketNames.has("route_advisor_id")) {
     db.exec("ALTER TABLE tickets ADD COLUMN route_advisor_id INTEGER");
+  }
+  if (!ticketNames.has("manager_attachment_name")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN manager_attachment_name TEXT");
+  }
+  if (!ticketNames.has("manager_attachment_data_url")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN manager_attachment_data_url TEXT");
+  }
+  if (!ticketNames.has("send_email_requested")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN send_email_requested INTEGER");
   }
   const advisorCols = db.prepare("PRAGMA table_info(advisors)").all() as { name: string }[];
   const advisorNames = new Set(advisorCols.map((c) => c.name));
@@ -1580,7 +1592,8 @@ app.get("/api/tickets/:id/status", (req, res) => {
     .prepare(
       `SELECT t.id, t.queue_number, t.status, t.school, t.specialty, t.specialty_code, t.language_section, t.course, t.study_duration_years, t.route_advisor_id,
               t.advisor_name, t.advisor_desk, t.advisor_faculty, t.advisor_department,
-              t.comment, t.case_type, t.student_comment, t.preferred_slot_at, t.missed_student_note,
+              t.comment, t.case_type, t.student_comment, t.manager_attachment_name, t.manager_attachment_data_url, t.send_email_requested,
+              t.preferred_slot_at, t.missed_student_note,
               CASE WHEN r.ticket_id IS NOT NULL THEN 1 ELSE 0 END AS has_review
        FROM tickets t
        LEFT JOIN ticket_reviews r ON r.ticket_id = t.id
@@ -1747,11 +1760,14 @@ app.post("/api/tickets/:id/call-to-my-desk", requireManager, (req, res) => {
 app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
-  const { status, comment, case_type, student_comment } = (req.body || {}) as {
+  const { status, comment, case_type, student_comment, manager_attachment_name, manager_attachment_data_url, send_email_requested } = (req.body || {}) as {
     status?: TicketStatus;
     comment?: string;
     case_type?: string | null;
     student_comment?: string;
+    manager_attachment_name?: string | null;
+    manager_attachment_data_url?: string | null;
+    send_email_requested?: boolean | number | null;
   };
 
   let row = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
@@ -1767,6 +1783,18 @@ app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   }
   if (student_comment !== undefined) {
     db.prepare("UPDATE tickets SET student_comment = ? WHERE id = ?").run(String(student_comment || "").trim() || null, id);
+    schedulePgCoreSync();
+  }
+  if (manager_attachment_name !== undefined || manager_attachment_data_url !== undefined) {
+    const name = String(manager_attachment_name || "").trim() || null;
+    const dataUrl = String(manager_attachment_data_url || "").trim() || null;
+    if (dataUrl && !dataUrl.startsWith("data:")) return res.status(400).json({ error: "Некорректный файл" });
+    if (dataUrl && dataUrl.length > 900_000) return res.status(400).json({ error: "Файл слишком большой" });
+    db.prepare("UPDATE tickets SET manager_attachment_name = ?, manager_attachment_data_url = ? WHERE id = ?").run(name, dataUrl, id);
+    schedulePgCoreSync();
+  }
+  if (send_email_requested !== undefined) {
+    db.prepare("UPDATE tickets SET send_email_requested = ? WHERE id = ?").run(send_email_requested ? 1 : 0, id);
     schedulePgCoreSync();
   }
 

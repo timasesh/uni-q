@@ -634,6 +634,31 @@ export default function StudentPage() {
               </div>
             )}
 
+            {(myTicket.student_comment || myTicket.comment || myTicket.manager_attachment_data_url) && (
+              <div className="border-t border-violet-100 bg-violet-50/50 px-5 py-4 dark:border-white/10 dark:bg-indigo-950/20">
+                <div className="text-[10px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-300">Результат обработки</div>
+                {myTicket.student_comment ? (
+                  <div className="mt-2 text-sm text-violet-900 dark:text-violet-100">
+                    <span className="font-black">Проблема:</span> {myTicket.student_comment}
+                  </div>
+                ) : null}
+                {myTicket.comment ? (
+                  <div className="mt-2 text-sm text-violet-900 dark:text-violet-100">
+                    <span className="font-black">Решение:</span> {myTicket.comment}
+                  </div>
+                ) : null}
+                {myTicket.manager_attachment_data_url ? (
+                  <a
+                    href={myTicket.manager_attachment_data_url}
+                    download={myTicket.manager_attachment_name || "document"}
+                    className="mt-3 inline-flex rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-extrabold text-violet-900 hover:bg-violet-100 dark:border-white/20 dark:bg-white/5 dark:text-sky-100 dark:hover:bg-white/10"
+                  >
+                    Скачать документ{myTicket.manager_attachment_name ? `: ${myTicket.manager_attachment_name}` : ""}
+                  </a>
+                ) : null}
+              </div>
+            )}
+
             {myTicket.status === "MISSED" && (
               <button
                 type="button"

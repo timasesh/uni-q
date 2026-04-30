@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEventHandler } from "react";
 import { io, Socket } from "socket.io-client";
 import { CheckCircle2, History, LogOut, Settings, UserCheck, X, XCircle } from "lucide-react";
 import { fetchJSON, readJSON } from "../api";
@@ -154,6 +154,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   >("");
   const [inServiceComment, setInServiceComment] = useState("");
   const [inServiceStudentComment, setInServiceStudentComment] = useState("");
+  const [inServiceAttachmentName, setInServiceAttachmentName] = useState("");
+  const [inServiceAttachmentDataUrl, setInServiceAttachmentDataUrl] = useState("");
+  const [inServiceSendEmail, setInServiceSendEmail] = useState(false);
 
   const onManagerLogoTap = () => {
     logoTapCountRef.current += 1;
@@ -402,6 +405,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     setInServiceCategory((activeTicket.case_type as any) || "");
     setInServiceComment(String(activeTicket.comment || ""));
     setInServiceStudentComment(String(activeTicket.student_comment || ""));
+    setInServiceAttachmentName(String(activeTicket.manager_attachment_name || ""));
+    setInServiceAttachmentDataUrl(String(activeTicket.manager_attachment_data_url || ""));
+    setInServiceSendEmail(Boolean(activeTicket.send_email_requested));
   }, [activeTicket?.id, activeTicket?.status]);
 
   useEffect(() => {
@@ -456,6 +462,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
         case_type: inServiceCategory,
         comment: inServiceComment,
         student_comment: inServiceStudentComment,
+        manager_attachment_name: inServiceAttachmentName || null,
+        manager_attachment_data_url: inServiceAttachmentDataUrl || null,
+        send_email_requested: inServiceSendEmail ? 1 : 0,
         status: "DONE",
       }),
     });
@@ -467,6 +476,27 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     if (autoCallAfterDone && (me?.reception_open === true || me?.reception_open === 1)) {
       await callNext();
     }
+  };
+
+  const onAttachmentPick: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) {
+      setInServiceAttachmentName("");
+      setInServiceAttachmentDataUrl("");
+      return;
+    }
+    if (f.size > 650_000) {
+      alert("Файл слишком большой. Максимум ~650KB");
+      e.currentTarget.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = typeof reader.result === "string" ? reader.result : "";
+      setInServiceAttachmentName(f.name);
+      setInServiceAttachmentDataUrl(data);
+    };
+    reader.readAsDataURL(f);
   };
 
   function caseTypeRu(caseType: string | null | undefined): string {
@@ -751,48 +781,79 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
 
               {activeTicket.status === "IN_SERVICE" && (
                 <div className="space-y-3">
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-violet-600 dark:text-sky-300">
-                      {t("categoryReq")}
-                    </div>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                      {[
-                        { label: t("catRetake"), v: "RETAKE" as const },
-                        { label: t("catPayment"), v: "PAYMENT" as const },
-                        { label: t("catDiscipline"), v: "DISCIPLINE" as const },
-                        { label: t("catStatement"), v: "STATEMENT" as const },
-                        { label: t("catCertificate"), v: "CERTIFICATE" as const },
-                        { label: t("catRegistration"), v: "REGISTRATION" as const },
-                        { label: t("catOther"), v: "OTHER" as const },
-                      ].map((x) => (
-                        <button
-                          key={x.v}
-                          type="button"
-                          onClick={() => setInServiceCategory(x.v)}
-                          className={cn(
-                            "rounded-2xl border-2 px-4 py-3 text-left text-sm font-extrabold shadow-sm transition",
-                            inServiceCategory === x.v
-                              ? "border-amber-400 bg-amber-500 text-white shadow-lg shadow-amber-500/40 ring-2 ring-amber-200/90 dark:border-amber-300 dark:bg-amber-500 dark:text-white dark:ring-amber-400"
-                              : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
-                          )}
-                        >
-                          {x.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <textarea
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Студент:</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${String(activeTicket.student_last_name || "").trim()} ${String(activeTicket.student_first_name || "").trim()}`.trim()}
+                      className="rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-950 outline-none dark:border-white/10 dark:bg-blue-950/40 dark:text-sky-100"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Категория:</span>
+                    <select
+                      value={inServiceCategory}
+                      onChange={(e) => setInServiceCategory(e.target.value as any)}
+                      className="rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
+                    >
+                      <option value="">-- Выберите категорию --</option>
+                      <option value="RETAKE">{t("catRetake")}</option>
+                      <option value="PAYMENT">{t("catPayment")}</option>
+                      <option value="DISCIPLINE">{t("catDiscipline")}</option>
+                      <option value="STATEMENT">{t("catStatement")}</option>
+                      <option value="CERTIFICATE">{t("catCertificate")}</option>
+                      <option value="REGISTRATION">{t("catRegistration")}</option>
+                      <option value="OTHER">{t("catOther")}</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Эдвайзер:</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={String(me?.name || "")}
+                      className="rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-950 outline-none dark:border-white/10 dark:bg-blue-950/40 dark:text-sky-100"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Проблема:</span>
+                    <textarea
+                      className="min-h-[80px] w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
+                      placeholder={t("studentCommentReq")}
+                      value={inServiceStudentComment}
+                      onChange={(e) => setInServiceStudentComment(e.target.value)}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Решение:</span>
+                    <textarea
                     className="min-h-[90px] w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
                     placeholder={t("commentReq")}
                     value={inServiceComment}
                     onChange={(e) => setInServiceComment(clampTo300Words(e.target.value))}
-                  />
-                  <textarea
-                    className="min-h-[70px] w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
-                    placeholder={t("studentCommentReq")}
-                    value={inServiceStudentComment}
-                    onChange={(e) => setInServiceStudentComment(e.target.value)}
-                  />
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Файлы решения:</span>
+                    <input
+                      type="file"
+                      onChange={onAttachmentPick}
+                      className="rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
+                    />
+                    {inServiceAttachmentName ? (
+                      <div className="text-xs font-semibold text-violet-700 dark:text-sky-300">Выбран файл: {inServiceAttachmentName}</div>
+                    ) : null}
+                  </label>
+                  <label className="flex items-center gap-2 pt-1 text-sm font-semibold text-violet-900 dark:text-sky-100">
+                    <input
+                      type="checkbox"
+                      checked={inServiceSendEmail}
+                      onChange={(e) => setInServiceSendEmail(e.target.checked)}
+                      className="h-4 w-4 rounded border-violet-300 text-violet-600"
+                    />
+                    Отправить на почту (пока без отправки)
+                  </label>
                   <div className="flex items-center justify-between text-xs font-semibold text-violet-800 dark:text-sky-300">
                     <span>{inServiceComment.trim() ? t("commentFilled") : t("commentRequired")}</span>
                     <span>
