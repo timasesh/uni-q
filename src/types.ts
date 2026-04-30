@@ -24,7 +24,7 @@ export type Ticket = {
   advisor_department?: string | null;
   comment?: string | null;
   student_comment?: string | null;
-  case_type?: "RETAKE" | "PAYMENT" | "DISCIPLINE" | "OTHER" | null;
+  case_type?: "RETAKE" | "PAYMENT" | "DISCIPLINE" | "STATEMENT" | "CERTIFICATE" | "REGISTRATION" | "OTHER" | null;
   estimated_time?: number | null;
   preferred_slot_at?: string | null;
   has_review?: number;

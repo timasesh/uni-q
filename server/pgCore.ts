@@ -137,11 +137,16 @@ export async function pgAdminLoad(dateStr: string): Promise<{
   return { year, month, daily, monthly };
 }
 
-export async function pgAdminBookings(from: string, to: string, status?: string, school?: string): Promise<any[]> {
+export async function pgAdminBookings(from: string, to: string, status?: string, school?: string, managerId?: number | null): Promise<any[]> {
   const params: unknown[] = [REPORT_TZ, from, to];
-  let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
-                    preferred_slot_at, status, created_at, advisor_name, advisor_desk
+  let sql = `SELECT t.id AS ticket_id, t.queue_number, t.student_first_name, t.student_last_name, t.school, t.specialty,
+                    t.preferred_slot_at, t.status, t.created_at,
+                    COALESCE(t.advisor_name, ra.name) AS advisor_name,
+                    COALESCE(t.advisor_desk, ra.desk_number) AS advisor_desk,
+                    t.route_advisor_id
              FROM tickets
+             t
+             LEFT JOIN advisors ra ON ra.id = t.route_advisor_id
              WHERE preferred_slot_at IS NOT NULL
                AND (preferred_slot_at AT TIME ZONE $1)::date >= $2::date
                AND (preferred_slot_at AT TIME ZONE $1)::date <= $3::date`;
@@ -151,9 +156,13 @@ export async function pgAdminBookings(from: string, to: string, status?: string,
   }
   if (school) {
     params.push(`%${school.toLowerCase()}%`);
-    sql += ` AND LOWER(COALESCE(school, '')) LIKE $${params.length}`;
+    sql += ` AND LOWER(COALESCE(t.school, '')) LIKE $${params.length}`;
   }
-  sql += ` ORDER BY preferred_slot_at ASC NULLS LAST, id ASC`;
+  if (managerId != null && Number.isFinite(managerId)) {
+    params.push(managerId);
+    sql += ` AND COALESCE(t.route_advisor_id, t.advisor_id) = $${params.length}`;
+  }
+  sql += ` ORDER BY t.preferred_slot_at ASC NULLS LAST, t.id ASC`;
   const { rows } = await q(sql, params);
   return rows;
 }

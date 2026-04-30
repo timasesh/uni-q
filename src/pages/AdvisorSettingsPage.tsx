@@ -30,6 +30,8 @@ function safeParseArray<T = unknown>(raw: string | null | undefined): T[] {
 type SchoolScopeSettings = {
   langs: string[];
   studyYears: number[];
+  courses: number[];
+  specialtyCodes: string[];
 };
 
 function parseSchoolScopes(raw: string | null | undefined): Record<string, SchoolScopeSettings> {
@@ -44,9 +46,17 @@ function parseSchoolScopes(raw: string | null | undefined): Record<string, Schoo
       const studyYears = Array.isArray((cfg as any).studyYears)
         ? (cfg as any).studyYears.map((x: any) => parseStudyDuration(x)).filter((n: any): n is number => n != null)
         : [];
+      const courses = Array.isArray((cfg as any).courses)
+        ? (cfg as any).courses.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 4)
+        : [];
+      const specialtyCodes = Array.isArray((cfg as any).specialtyCodes)
+        ? (cfg as any).specialtyCodes.map((x: any) => String(x)).filter(Boolean)
+        : [];
       const normalizedLangs = Array.from(new Set(langs)) as string[];
       const normalizedYears = (Array.from(new Set(studyYears)) as number[]).sort((a, b) => a - b);
-      out[school] = { langs: normalizedLangs, studyYears: normalizedYears };
+      const normalizedCourses = (Array.from(new Set(courses)) as number[]).sort((a, b) => a - b);
+      const normalizedSpecs = Array.from(new Set(specialtyCodes)) as string[];
+      out[school] = { langs: normalizedLangs, studyYears: normalizedYears, courses: normalizedCourses, specialtyCodes: normalizedSpecs };
     }
     return out;
   } catch {
@@ -120,9 +130,20 @@ export default function AdvisorSettingsPage() {
   const specSet = useMemo(() => new Set(specialtyCodes), [specialtyCodes]);
   const studyYearSet = useMemo(() => new Set(studyYears), [studyYears]);
   const scopeSchoolValue = scopeSchool && schoolSet.has(scopeSchool) ? scopeSchool : schools[0] || "";
-  const activeSchoolScope: SchoolScopeSettings = schoolScopes[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+  const activeSchoolScope: SchoolScopeSettings = schoolScopes[scopeSchoolValue] ?? {
+    langs: [],
+    studyYears: [],
+    courses: [],
+    specialtyCodes: [],
+  };
   const activeScopeLangSet = useMemo(() => new Set(activeSchoolScope.langs), [activeSchoolScope.langs]);
   const activeScopeYearSet = useMemo(() => new Set(activeSchoolScope.studyYears), [activeSchoolScope.studyYears]);
+  const activeScopeCourseSet = useMemo(() => new Set(activeSchoolScope.courses), [activeSchoolScope.courses]);
+  const activeScopeSpecSet = useMemo(() => new Set(activeSchoolScope.specialtyCodes), [activeSchoolScope.specialtyCodes]);
+  const specialtiesForScopeSchool = useMemo(() => {
+    if (!scopeSchoolValue) return [] as { code: string; label: string }[];
+    return (SCHOOL_DATA[scopeSchoolValue]?.specialties ?? []).map((sp) => ({ code: sp.code, label: `${sp.name} (${sp.code})` }));
+  }, [scopeSchoolValue]);
 
   const specialtiesForSelectedSchools = useMemo(() => {
     const out: { code: string; label: string }[] = [];
@@ -172,7 +193,7 @@ export default function AdvisorSettingsPage() {
   const toggleScopeLang = (langId: string) => {
     if (!scopeSchoolValue) return;
     setSchoolScopes((prev) => {
-      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [], courses: [], specialtyCodes: [] };
       const langs = cur.langs.includes(langId) ? cur.langs.filter((x) => x !== langId) : [...cur.langs, langId];
       return { ...prev, [scopeSchoolValue]: { ...cur, langs: langs.sort() } };
     });
@@ -180,17 +201,42 @@ export default function AdvisorSettingsPage() {
   const toggleScopeStudyYear = (n: number) => {
     if (!scopeSchoolValue) return;
     setSchoolScopes((prev) => {
-      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [], courses: [], specialtyCodes: [] };
       const years = cur.studyYears.includes(n) ? cur.studyYears.filter((x) => x !== n) : [...cur.studyYears, n].sort((a, b) => a - b);
       return { ...prev, [scopeSchoolValue]: { ...cur, studyYears: years } };
+    });
+  };
+  const toggleScopeCourse = (n: number) => {
+    if (!scopeSchoolValue) return;
+    setSchoolScopes((prev) => {
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [], courses: [], specialtyCodes: [] };
+      const courses = cur.courses.includes(n) ? cur.courses.filter((x) => x !== n) : [...cur.courses, n].sort((a, b) => a - b);
+      return { ...prev, [scopeSchoolValue]: { ...cur, courses } };
+    });
+  };
+  const toggleScopeSpecialty = (code: string) => {
+    if (!scopeSchoolValue) return;
+    setSchoolScopes((prev) => {
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [], courses: [], specialtyCodes: [] };
+      const specialtyCodes = cur.specialtyCodes.includes(code)
+        ? cur.specialtyCodes.filter((x) => x !== code)
+        : [...cur.specialtyCodes, code].sort();
+      return { ...prev, [scopeSchoolValue]: { ...cur, specialtyCodes } };
     });
   };
   const applyCurrentScopeToAllSchools = () => {
     if (!scopeSchoolValue || schools.length === 0) return;
     setSchoolScopes((prev) => {
-      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [], courses: [], specialtyCodes: [] };
       const next: Record<string, SchoolScopeSettings> = { ...prev };
-      for (const s of schools) next[s] = { langs: [...cur.langs], studyYears: [...cur.studyYears] };
+      for (const s of schools) {
+        next[s] = {
+          langs: [...cur.langs],
+          studyYears: [...cur.studyYears],
+          courses: [...cur.courses],
+          specialtyCodes: [...cur.specialtyCodes],
+        };
+      }
       return next;
     });
   };
@@ -213,8 +259,8 @@ export default function AdvisorSettingsPage() {
         assigned_study_years_json: studyYears,
         assigned_school_scopes_json: Object.fromEntries(
           schools.map((s) => {
-            const cfg = schoolScopes[s] ?? { langs: [], studyYears: [] };
-            return [s, { langs: cfg.langs, studyYears: cfg.studyYears }];
+            const cfg = schoolScopes[s] ?? { langs: [], studyYears: [], courses: [], specialtyCodes: [] };
+            return [s, { langs: cfg.langs, studyYears: cfg.studyYears, courses: cfg.courses, specialtyCodes: cfg.specialtyCodes }];
           })
         ),
       }),
@@ -356,7 +402,7 @@ export default function AdvisorSettingsPage() {
                 </div>
               </div>
               <button type="button" onClick={applyCurrentScopeToAllSchools} className="ui-btn-ghost px-3 py-2 text-xs" disabled={!scopeSchoolValue}>
-                Применить к выбранным школам
+                Применить ко всем школам
               </button>
             </div>
             <div className="mt-3">
@@ -399,6 +445,27 @@ export default function AdvisorSettingsPage() {
               </div>
             </div>
             <div className="mt-4">
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Курсы для выбранной школы</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[1, 2, 3, 4].map((n) => (
+                  <button
+                    key={`scope-course-${n}`}
+                    type="button"
+                    onClick={() => toggleScopeCourse(n)}
+                    disabled={!scopeSchoolValue}
+                    className={cn(
+                      "rounded-2xl border-2 px-4 py-2.5 text-sm font-extrabold shadow-sm transition disabled:opacity-50",
+                      activeScopeCourseSet.has(n)
+                        ? "border-emerald-400 bg-emerald-500 text-white"
+                        : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
+                    )}
+                  >
+                    {n} курс
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4">
               <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Тип обучения для выбранной школы</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {STUDY_DURATION_OPTIONS.map((opt) => (
@@ -418,6 +485,31 @@ export default function AdvisorSettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Специальности для выбранной школы</div>
+              {specialtiesForScopeSchool.length === 0 ? (
+                <div className="mt-2 text-xs font-semibold text-violet-600 dark:text-violet-400">Нет специальностей для выбранной школы</div>
+              ) : (
+                <div className="mt-2 flex max-h-52 flex-wrap gap-2 overflow-y-auto">
+                  {specialtiesForScopeSchool.map((sp) => (
+                    <button
+                      key={`scope-spec-${sp.code}`}
+                      type="button"
+                      onClick={() => toggleScopeSpecialty(sp.code)}
+                      disabled={!scopeSchoolValue}
+                      className={cn(
+                        "rounded-2xl border-2 px-3 py-2 text-xs font-extrabold shadow-sm transition disabled:opacity-50",
+                        activeScopeSpecSet.has(sp.code)
+                          ? "border-emerald-400 bg-emerald-500 text-white"
+                          : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
+                      )}
+                    >
+                      {sp.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

@@ -618,7 +618,12 @@ function recomputeRouteOwnersForWaitingTickets() {
   }
 }
 
-type SchoolScopedFilters = { langs: string[] | null; studyYears: number[] | null };
+type SchoolScopedFilters = {
+  langs: string[] | null;
+  studyYears: number[] | null;
+  courses: number[] | null;
+  specialtyCodes: string[] | null;
+};
 
 function parseSchoolScopedFilters(raw: string | null | undefined): Record<string, SchoolScopedFilters> {
   const out: Record<string, SchoolScopedFilters> = {};
@@ -632,7 +637,18 @@ function parseSchoolScopedFilters(raw: string | null | undefined): Record<string
       const langs = langRaw.map((x: any) => String(x).toLowerCase()).filter((x: string) => x.length > 0);
       const yearsRaw = Array.isArray((cfg as any).studyYears) ? (cfg as any).studyYears : [];
       const studyYears = yearsRaw.map((x: any) => parseStudyDuration(x)).filter((n: any): n is number => n != null);
-      out[school] = { langs: langs.length > 0 ? langs : null, studyYears: studyYears.length > 0 ? studyYears : null };
+      const coursesRaw = Array.isArray((cfg as any).courses) ? (cfg as any).courses : [];
+      const courses = coursesRaw
+        .map((x: any) => Number(x))
+        .filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 4);
+      const specsRaw = Array.isArray((cfg as any).specialtyCodes) ? (cfg as any).specialtyCodes : [];
+      const specialtyCodes = specsRaw.map((x: any) => String(x)).filter((s: string) => s.length > 0);
+      out[school] = {
+        langs: langs.length > 0 ? langs : null,
+        studyYears: studyYears.length > 0 ? studyYears : null,
+        courses: courses.length > 0 ? courses : null,
+        specialtyCodes: specialtyCodes.length > 0 ? specialtyCodes : null,
+      };
     }
   } catch {
     return out;
@@ -698,6 +714,8 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   const schoolScoped = Object.entries(perSchool).find(([k]) => norm(k) === norm(school))?.[1];
   if (schoolScoped?.langs && schoolScoped.langs.length > 0) langs = schoolScoped.langs;
   if (schoolScoped?.studyYears && schoolScoped.studyYears.length > 0) studyYears = schoolScoped.studyYears;
+  if (schoolScoped?.courses && schoolScoped.courses.length > 0) courses = schoolScoped.courses;
+  if (schoolScoped?.specialtyCodes && schoolScoped.specialtyCodes.length > 0) specs = schoolScoped.specialtyCodes;
 
   if (langs && langs.length > 0) {
     const lang = String(ticket.language_section || "").toLowerCase();
@@ -1758,7 +1776,7 @@ app.patch("/api/tickets/:id", requireManager, async (req, res) => {
     const valid: TicketStatus[] = ["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"];
     if (!valid.includes(status)) return res.status(400).json({ error: "Неверный статус" });
     if (status === "DONE") {
-      const validTypes = ["RETAKE", "PAYMENT", "DISCIPLINE", "OTHER"];
+      const validTypes = ["RETAKE", "PAYMENT", "DISCIPLINE", "STATEMENT", "CERTIFICATE", "REGISTRATION", "OTHER"];
       if (!row.case_type || !validTypes.includes(String(row.case_type))) {
         return res.status(400).json({ error: "Укажите категорию обращения" });
       }
@@ -2170,6 +2188,8 @@ app.get("/api/admin/stats/bookings", requireAdmin, async (req, res) => {
   const statusFilter = String(req.query.status || "").trim().toUpperCase();
   const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
   const format = String(req.query.format || "json").toLowerCase();
+  const managerIdQ = Number(req.query.managerId ?? "");
+  const managerId = Number.isFinite(managerIdQ) && managerIdQ > 0 ? Math.trunc(managerIdQ) : null;
 
   const schoolQ = String(req.query.school || "").trim().toLowerCase();
   let rows: any[] = [];
@@ -2180,22 +2200,31 @@ app.get("/api/admin/stats/bookings", requireAdmin, async (req, res) => {
         from,
         to,
         statusFilter && validStatuses.has(statusFilter) ? statusFilter : undefined,
-        schoolQ || undefined
+        schoolQ || undefined,
+        managerId
         )
       )) ?? [];
   }
   if (rows.length === 0) {
-    let sql = `SELECT id AS ticket_id, queue_number, student_first_name, student_last_name, school, specialty,
-         preferred_slot_at, status, created_at, advisor_name, advisor_desk
-       FROM tickets
-       WHERE preferred_slot_at IS NOT NULL
-         AND date(preferred_slot_at, 'localtime') >= ? AND date(preferred_slot_at, 'localtime') <= ?`;
+    let sql = `SELECT t.id AS ticket_id, t.queue_number, t.student_first_name, t.student_last_name, t.school, t.specialty,
+         t.preferred_slot_at, t.status, t.created_at,
+         COALESCE(t.advisor_name, ra.name) AS advisor_name,
+         COALESCE(t.advisor_desk, ra.desk_number) AS advisor_desk,
+         t.route_advisor_id
+       FROM tickets t
+       LEFT JOIN advisors ra ON ra.id = t.route_advisor_id
+       WHERE t.preferred_slot_at IS NOT NULL
+         AND date(t.preferred_slot_at, 'localtime') >= ? AND date(t.preferred_slot_at, 'localtime') <= ?`;
     const params: (string | number)[] = [from, to];
     if (statusFilter && validStatuses.has(statusFilter)) {
-      sql += " AND status = ?";
+      sql += " AND t.status = ?";
       params.push(statusFilter);
     }
-    sql += " ORDER BY preferred_slot_at ASC, id ASC";
+    if (managerId != null) {
+      sql += " AND COALESCE(t.route_advisor_id, t.advisor_id) = ?";
+      params.push(managerId);
+    }
+    sql += " ORDER BY t.preferred_slot_at ASC, t.id ASC";
     rows = db.prepare(sql).all(...params) as any[];
     if (schoolQ) rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
   }
@@ -2242,7 +2271,13 @@ app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return res.status(400).json({ error: "Укажите дату в формате YYYY-MM-DD" });
   }
-  if (isPgCoreEnabled()) {
+  const statusFilter = String(req.query.status || "").trim().toUpperCase();
+  const validStatuses = new Set(["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"]);
+  const managerIdQ = Number(req.query.managerId ?? "");
+  const managerId = Number.isFinite(managerIdQ) && managerIdQ > 0 ? Math.trunc(managerIdQ) : null;
+  const hasExtraFilters = (statusFilter && validStatuses.has(statusFilter)) || managerId != null;
+
+  if (isPgCoreEnabled() && !hasExtraFilters) {
     const pg = await fastPg("pg admin load", () => pgAdminLoad(dateStr));
     if (pg) {
       return res.json(pg);
@@ -2260,9 +2295,18 @@ app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
        FROM tickets
        WHERE strftime('%Y', created_at, 'localtime') = ?
          AND strftime('%m', created_at, 'localtime') = ?
+         AND (? = '' OR status = ?)
+         AND (? IS NULL OR COALESCE(route_advisor_id, advisor_id) = ?)
        GROUP BY CAST(strftime('%d', created_at, 'localtime') AS INTEGER)`
     )
-    .all(String(year), String(month).padStart(2, "0")) as { k: number; c: number }[];
+    .all(
+      String(year),
+      String(month).padStart(2, "0"),
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      managerId,
+      managerId
+    ) as { k: number; c: number }[];
   const callDayRows = db
     .prepare(
       `SELECT CAST(strftime('%d', called_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
@@ -2270,27 +2314,52 @@ app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
        WHERE called_at IS NOT NULL
          AND strftime('%Y', called_at, 'localtime') = ?
          AND strftime('%m', called_at, 'localtime') = ?
+         AND (? = '' OR status = ?)
+         AND (? IS NULL OR COALESCE(route_advisor_id, advisor_id) = ?)
        GROUP BY CAST(strftime('%d', called_at, 'localtime') AS INTEGER)`
     )
-    .all(String(year), String(month).padStart(2, "0")) as { k: number; c: number }[];
+    .all(
+      String(year),
+      String(month).padStart(2, "0"),
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      managerId,
+      managerId
+    ) as { k: number; c: number }[];
 
   const regMonthRows = db
     .prepare(
       `SELECT CAST(strftime('%m', created_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
        FROM tickets
        WHERE strftime('%Y', created_at, 'localtime') = ?
+         AND (? = '' OR status = ?)
+         AND (? IS NULL OR COALESCE(route_advisor_id, advisor_id) = ?)
        GROUP BY CAST(strftime('%m', created_at, 'localtime') AS INTEGER)`
     )
-    .all(String(year)) as { k: number; c: number }[];
+    .all(
+      String(year),
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      managerId,
+      managerId
+    ) as { k: number; c: number }[];
   const callMonthRows = db
     .prepare(
       `SELECT CAST(strftime('%m', called_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
        FROM tickets
        WHERE called_at IS NOT NULL
          AND strftime('%Y', called_at, 'localtime') = ?
+         AND (? = '' OR status = ?)
+         AND (? IS NULL OR COALESCE(route_advisor_id, advisor_id) = ?)
        GROUP BY CAST(strftime('%m', called_at, 'localtime') AS INTEGER)`
     )
-    .all(String(year)) as { k: number; c: number }[];
+    .all(
+      String(year),
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      statusFilter && validStatuses.has(statusFilter) ? statusFilter : "",
+      managerId,
+      managerId
+    ) as { k: number; c: number }[];
 
   const regDayMap = new Map<number, number>(regDayRows.map((r) => [Number(r.k), Number(r.c)]));
   const callDayMap = new Map<number, number>(callDayRows.map((r) => [Number(r.k), Number(r.c)]));

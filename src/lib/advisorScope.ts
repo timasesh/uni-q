@@ -41,7 +41,12 @@ function parseCourse(course: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-type SchoolScopedFilters = { langs: string[] | null; studyYears: number[] | null };
+type SchoolScopedFilters = {
+  langs: string[] | null;
+  studyYears: number[] | null;
+  courses: number[] | null;
+  specialtyCodes: string[] | null;
+};
 
 function parseSchoolScopedFilters(raw: string | null | undefined): Record<string, SchoolScopedFilters> {
   if (!raw) return {};
@@ -55,7 +60,18 @@ function parseSchoolScopedFilters(raw: string | null | undefined): Record<string
       const yearsRaw = Array.isArray((cfg as any).studyYears) ? (cfg as any).studyYears : [];
       const langs = langsRaw.map((x: any) => String(x).toLowerCase()).filter(Boolean);
       const studyYears = yearsRaw.map((x: any) => parseStudyDuration(x)).filter((n: any): n is number => n != null);
-      out[school] = { langs: langs.length > 0 ? langs : null, studyYears: studyYears.length > 0 ? studyYears : null };
+      const coursesRaw = Array.isArray((cfg as any).courses) ? (cfg as any).courses : [];
+      const courses = coursesRaw
+        .map((x: any) => Number(x))
+        .filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 4);
+      const specsRaw = Array.isArray((cfg as any).specialtyCodes) ? (cfg as any).specialtyCodes : [];
+      const specialtyCodes = specsRaw.map((x: any) => String(x)).filter(Boolean);
+      out[school] = {
+        langs: langs.length > 0 ? langs : null,
+        studyYears: studyYears.length > 0 ? studyYears : null,
+        courses: courses.length > 0 ? courses : null,
+        specialtyCodes: specialtyCodes.length > 0 ? specialtyCodes : null,
+      };
     }
     return out;
   } catch {
@@ -113,6 +129,8 @@ export function ticketMatchesAdvisorScope(me: Advisor, ticket: Ticket): boolean 
   const scoped = Object.entries(schoolScoped).find(([k]) => normSchool(k) === normSchool(ticketSchool))?.[1];
   if (scoped?.langs && scoped.langs.length > 0) langs = scoped.langs;
   if (scoped?.studyYears && scoped.studyYears.length > 0) studyYears = scoped.studyYears;
+  if (scoped?.courses && scoped.courses.length > 0) courses = scoped.courses;
+  if (scoped?.specialtyCodes && scoped.specialtyCodes.length > 0) specs = scoped.specialtyCodes;
 
   if (langs && langs.length > 0) {
     const lang = String(ticket.language_section || "").toLowerCase();

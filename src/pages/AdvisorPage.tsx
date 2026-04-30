@@ -149,7 +149,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const [historyCommentEditId, setHistoryCommentEditId] = useState<number | null>(null);
   const [historyCommentDraft, setHistoryCommentDraft] = useState("");
 
-  const [inServiceCategory, setInServiceCategory] = useState<"RETAKE" | "PAYMENT" | "DISCIPLINE" | "OTHER" | "">("");
+  const [inServiceCategory, setInServiceCategory] = useState<
+    "RETAKE" | "PAYMENT" | "DISCIPLINE" | "STATEMENT" | "CERTIFICATE" | "REGISTRATION" | "OTHER" | ""
+  >("");
   const [inServiceComment, setInServiceComment] = useState("");
   const [inServiceStudentComment, setInServiceStudentComment] = useState("");
 
@@ -471,6 +473,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     if (caseType === "RETAKE") return "Ритейк";
     if (caseType === "PAYMENT") return "Оплата";
     if (caseType === "DISCIPLINE") return "Вопрос по дисциплине";
+    if (caseType === "STATEMENT") return "Заявление";
+    if (caseType === "CERTIFICATE") return "Справки";
+    if (caseType === "REGISTRATION") return "Регистрация";
     if (caseType === "OTHER") return "Другое";
     return "—";
   }
@@ -755,6 +760,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                         { label: t("catRetake"), v: "RETAKE" as const },
                         { label: t("catPayment"), v: "PAYMENT" as const },
                         { label: t("catDiscipline"), v: "DISCIPLINE" as const },
+                        { label: t("catStatement"), v: "STATEMENT" as const },
+                        { label: t("catCertificate"), v: "CERTIFICATE" as const },
+                        { label: t("catRegistration"), v: "REGISTRATION" as const },
                         { label: t("catOther"), v: "OTHER" as const },
                       ].map((x) => (
                         <button

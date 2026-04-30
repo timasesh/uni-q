@@ -680,6 +680,9 @@ function firstDayOfMonthYmd(): string {
 function AdminLoad() {
   const { t } = useI18n();
   const [date, setDate] = useState(() => localYmdToday());
+  const [status, setStatus] = useState("");
+  const [managerId, setManagerId] = useState("");
+  const [managers, setManagers] = useState<{ id: number; name: string; login?: string | null }[]>([]);
   const [data, setData] = useState<AdminLoadResponse | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
@@ -693,7 +696,10 @@ function AdminLoad() {
     let cancelled = false;
     setLoading(true);
     void (async () => {
-      const res = await fetchJSON(`/api/admin/stats/load?date=${encodeURIComponent(date)}`);
+      const qs = new URLSearchParams({ date });
+      if (status.trim()) qs.set("status", status.trim().toUpperCase());
+      if (managerId.trim()) qs.set("managerId", managerId.trim());
+      const res = await fetchJSON(`/api/admin/stats/load?${qs}`);
       if (cancelled) return;
       if (!res.ok) {
         const j = (await readJSON<{ error?: string }>(res).catch(() => ({}))) as { error?: string };
@@ -712,7 +718,16 @@ function AdminLoad() {
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, status, managerId]);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
+      if (!res.ok) return;
+      const js = await readJSON<{ rows: { id: number; name: string; login?: string | null }[] }>(res);
+      setManagers(js.rows || []);
+    })();
+  }, []);
 
   const points = useMemo(() => {
     if (!data) return [];
@@ -755,6 +770,41 @@ function AdminLoad() {
             {modeOptions.map((opt) => (
               <option key={opt.id} value={opt.id}>
                 {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+            {t("adminWaitFilterStatus")}
+          </span>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+          >
+            <option value="">{t("adminFilterAny")}</option>
+            {TICKET_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {ticketStatusLabel(s, t)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-[240px] flex-col gap-1">
+          <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+            {t("adminVisitsColManager")}
+          </span>
+          <select
+            value={managerId}
+            onChange={(e) => setManagerId(e.target.value)}
+            className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+          >
+            <option value="">{t("adminFilterAny")}</option>
+            {managers.map((m) => (
+              <option key={m.id} value={String(m.id)}>
+                {m.name}
+                {m.login ? ` (${m.login})` : ""}
               </option>
             ))}
           </select>
@@ -2324,6 +2374,8 @@ function AdminBookingsStats() {
   const [to, setTo] = useState(() => localYmdToday());
   const [status, setStatus] = useState("");
   const [school, setSchool] = useState("");
+  const [managerId, setManagerId] = useState("");
+  const [managers, setManagers] = useState<{ id: number; name: string; login?: string | null }[]>([]);
   const [rows, setRows] = useState<AdminBookingRow[] | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2338,6 +2390,7 @@ function AdminBookingsStats() {
     const qs = new URLSearchParams({ from, to });
     if (status.trim()) qs.set("status", status.trim().toUpperCase());
     if (school.trim()) qs.set("school", school.trim());
+    if (managerId.trim()) qs.set("managerId", managerId.trim());
     if (csv) qs.set("format", "csv");
     return qs;
   };
@@ -2360,6 +2413,12 @@ function AdminBookingsStats() {
 
   useEffect(() => {
     void load();
+    void (async () => {
+      const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
+      if (!res.ok) return;
+      const js = await readJSON<{ rows: { id: number; name: string; login?: string | null }[] }>(res);
+      setManagers(js.rows || []);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2440,6 +2499,24 @@ function AdminBookingsStats() {
               {SCHOOL_NAMES.map((s) => (
                 <option key={s} value={s}>
                   {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-w-[240px] flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminVisitsColManager")}
+            </span>
+            <select
+              value={managerId}
+              onChange={(e) => setManagerId(e.target.value)}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            >
+              <option value="">{t("adminFilterAny")}</option>
+              {managers.map((m) => (
+                <option key={m.id} value={String(m.id)}>
+                  {m.name}
+                  {m.login ? ` (${m.login})` : ""}
                 </option>
               ))}
             </select>
