@@ -24,6 +24,16 @@ type StudentForm = {
 };
 
 const STUDENT_FORM_DRAFT_KEY = "uniq.student.form.v2";
+const STUDENT_LAST_RESULT_KEY = "uniq.student.last.result.v1";
+
+type LastStudentResult = {
+  ticketId: number;
+  student_comment?: string | null;
+  comment?: string | null;
+  manager_attachment_name?: string | null;
+  manager_attachment_data_url?: string | null;
+  finishedAtIso: string;
+};
 
 const EMPTY_STUDENT_FORM: StudentForm = {
   firstName: "",
@@ -80,6 +90,16 @@ export default function StudentPage() {
   const schemeAutoOpenedRef = useRef<number | null>(null);
   const [missedReasonOpen, setMissedReasonOpen] = useState(false);
   const [missedReasonText, setMissedReasonText] = useState("");
+  const [lastResult, setLastResult] = useState<LastStudentResult | null>(() => {
+    try {
+      const raw = localStorage.getItem(STUDENT_LAST_RESULT_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as LastStudentResult;
+    } catch {
+      return null;
+    }
+  });
+  const [lastResultOpen, setLastResultOpen] = useState(false);
 
   const [form, setForm] = useState<StudentForm>(EMPTY_STUDENT_FORM);
 
@@ -106,6 +126,14 @@ export default function StudentPage() {
   useEffect(() => {
     localStorage.setItem(STUDENT_FORM_DRAFT_KEY, JSON.stringify(form));
   }, [form]);
+
+  useEffect(() => {
+    if (!lastResult) {
+      localStorage.removeItem(STUDENT_LAST_RESULT_KEY);
+      return;
+    }
+    localStorage.setItem(STUDENT_LAST_RESULT_KEY, JSON.stringify(lastResult));
+  }, [lastResult]);
 
   useEffect(() => {
     // Optional: hydrate student name from Microsoft session (if any).
@@ -348,6 +376,19 @@ export default function StudentPage() {
     if (reviewDismissed) return;
     setReviewOpen(true);
   }, [myTicket?.id, myTicket?.status, myTicket?.has_review, reviewDismissed]);
+
+  useEffect(() => {
+    if (!myTicket || myTicket.status !== "DONE") return;
+    if (!myTicket.student_comment && !myTicket.comment && !myTicket.manager_attachment_data_url) return;
+    setLastResult({
+      ticketId: myTicket.id,
+      student_comment: myTicket.student_comment ?? null,
+      comment: myTicket.comment ?? null,
+      manager_attachment_name: myTicket.manager_attachment_name ?? null,
+      manager_attachment_data_url: myTicket.manager_attachment_data_url ?? null,
+      finishedAtIso: new Date().toISOString(),
+    });
+  }, [myTicket]);
 
   useEffect(() => {
     if (!myTicket) return;
@@ -734,6 +775,15 @@ export default function StudentPage() {
               <div className="ui-title dark:text-white">{t("joinQueue")}</div>
               <div className="mt-1 ui-muted">{t("fillForm")}</div>
             </div>
+            {lastResult ? (
+              <button
+                type="button"
+                onClick={() => setLastResultOpen(true)}
+                className="rounded-xl border border-violet-300 bg-violet-50 px-4 py-2 text-sm font-extrabold text-violet-900 hover:bg-violet-100 dark:border-white/15 dark:bg-slate-900 dark:text-sky-100 dark:hover:bg-white/10"
+              >
+                Вернуться к предыдущей заявке
+              </button>
+            ) : null}
           </div>
           {lineReg != null && lineReg.matchesAny && !lineReg.open && (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-100">
@@ -996,6 +1046,21 @@ export default function StudentPage() {
                 <div className="mt-1 text-sm font-semibold text-violet-900">{myTicket.student_comment}</div>
               </div>
             ) : null}
+            {myTicket.comment ? (
+              <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-violet-700">Решение сотрудника</div>
+                <div className="mt-1 text-sm font-semibold text-violet-900">{myTicket.comment}</div>
+              </div>
+            ) : null}
+            {myTicket.manager_attachment_data_url ? (
+              <a
+                href={myTicket.manager_attachment_data_url}
+                download={myTicket.manager_attachment_name || "document"}
+                className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-violet-300 bg-white px-3 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 dark:border-white/20 dark:bg-white/5 dark:text-sky-100 dark:hover:bg-white/10"
+              >
+                Скачать прикрепленный файл{myTicket.manager_attachment_name ? `: ${myTicket.manager_attachment_name}` : ""}
+              </a>
+            ) : null}
             <div className="mt-3 text-sm font-semibold text-violet-700 dark:text-violet-300">{t("studentReviewStars")}</div>
             <div className="mt-2 flex justify-center gap-2">
               {[1, 2, 3, 4, 5].map((n) => (
@@ -1041,6 +1106,44 @@ export default function StudentPage() {
                 {t("studentReviewSkip")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {lastResultOpen && lastResult && (
+        <div className="fixed inset-0 z-[66] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+          <div className="relative z-10 w-full max-w-md rounded-3xl border border-violet-100 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-950">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-lg font-black text-violet-950 dark:text-white">Предыдущая заявка</div>
+              <button
+                type="button"
+                onClick={() => setLastResultOpen(false)}
+                className="rounded-lg border border-violet-200 px-2 py-1 text-xs font-extrabold text-violet-700 hover:bg-violet-50 dark:border-white/20 dark:text-sky-200"
+              >
+                {t("close")}
+              </button>
+            </div>
+            {lastResult.student_comment ? (
+              <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-violet-700">Проблема</div>
+                <div className="mt-1 text-sm font-semibold text-violet-900">{lastResult.student_comment}</div>
+              </div>
+            ) : null}
+            {lastResult.comment ? (
+              <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-violet-700">Решение</div>
+                <div className="mt-1 text-sm font-semibold text-violet-900">{lastResult.comment}</div>
+              </div>
+            ) : null}
+            {lastResult.manager_attachment_data_url ? (
+              <a
+                href={lastResult.manager_attachment_data_url}
+                download={lastResult.manager_attachment_name || "document"}
+                className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-violet-300 bg-white px-3 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 dark:border-white/20 dark:bg-white/5 dark:text-sky-100 dark:hover:bg-white/10"
+              >
+                Скачать прикрепленный файл{lastResult.manager_attachment_name ? `: ${lastResult.manager_attachment_name}` : ""}
+              </a>
+            ) : null}
           </div>
         </div>
       )}
