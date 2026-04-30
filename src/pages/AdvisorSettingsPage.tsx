@@ -9,6 +9,7 @@ import { useManagerContext } from "../context/ManagerContext";
 import { hydrateManagerWorkedFromServer } from "../lib/advisorWorkSync";
 import { SCHOOL_DATA, SCHOOL_NAMES } from "../schools";
 import { AppLogo } from "../lib/brand";
+import { STUDY_DURATION_OPTIONS, parseStudyDuration } from "../lib/studyDuration";
 
 const LANGS = [
   { id: "ru", label: "Рус" },
@@ -23,6 +24,33 @@ function safeParseArray<T = unknown>(raw: string | null | undefined): T[] {
     return Array.isArray(v) ? (v as T[]) : [];
   } catch {
     return [];
+  }
+}
+
+type SchoolScopeSettings = {
+  langs: string[];
+  studyYears: number[];
+};
+
+function parseSchoolScopes(raw: string | null | undefined): Record<string, SchoolScopeSettings> {
+  if (!raw) return {};
+  try {
+    const obj = JSON.parse(raw) as Record<string, any>;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+    const out: Record<string, SchoolScopeSettings> = {};
+    for (const [school, cfg] of Object.entries(obj)) {
+      if (!cfg || typeof cfg !== "object") continue;
+      const langs = Array.isArray((cfg as any).langs) ? (cfg as any).langs.map((x: any) => String(x).toLowerCase()) : [];
+      const studyYears = Array.isArray((cfg as any).studyYears)
+        ? (cfg as any).studyYears.map((x: any) => parseStudyDuration(x)).filter((n: any): n is number => n != null)
+        : [];
+      const normalizedLangs = Array.from(new Set(langs)) as string[];
+      const normalizedYears = (Array.from(new Set(studyYears)) as number[]).sort((a, b) => a - b);
+      out[school] = { langs: normalizedLangs, studyYears: normalizedYears };
+    }
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -46,6 +74,8 @@ export default function AdvisorSettingsPage() {
   const [courses, setCourses] = useState<number[]>([1, 2, 3, 4]);
   const [specialtyCodes, setSpecialtyCodes] = useState<string[]>([]);
   const [studyYears, setStudyYears] = useState<number[]>([]);
+  const [schoolScopes, setSchoolScopes] = useState<Record<string, SchoolScopeSettings>>({});
+  const [scopeSchool, setScopeSchool] = useState("");
 
   useEffect(() => {
     void (async () => {
@@ -68,9 +98,13 @@ export default function AdvisorSettingsPage() {
       setSpecialtyCodes(safeParseArray<string>(js.assigned_specialties_json).map((x) => String(x)));
       setStudyYears(
         safeParseArray<number>(js.assigned_study_years_json)
-          .map((x) => Number(x))
-          .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8)
+          .map((x) => parseStudyDuration(x))
+          .filter((n): n is number => n != null)
       );
+      const parsedScopes = parseSchoolScopes((js as any).assigned_school_scopes_json ?? null);
+      setSchoolScopes(parsedScopes);
+      const firstSchool = safeParseArray<string>(js.assigned_schools_json)[0] || "";
+      setScopeSchool(firstSchool);
       setLoading(false);
     })();
   }, []);
@@ -85,6 +119,10 @@ export default function AdvisorSettingsPage() {
   const courseSet = useMemo(() => new Set(courses), [courses]);
   const specSet = useMemo(() => new Set(specialtyCodes), [specialtyCodes]);
   const studyYearSet = useMemo(() => new Set(studyYears), [studyYears]);
+  const scopeSchoolValue = scopeSchool && schoolSet.has(scopeSchool) ? scopeSchool : schools[0] || "";
+  const activeSchoolScope: SchoolScopeSettings = schoolScopes[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+  const activeScopeLangSet = useMemo(() => new Set(activeSchoolScope.langs), [activeSchoolScope.langs]);
+  const activeScopeYearSet = useMemo(() => new Set(activeSchoolScope.studyYears), [activeSchoolScope.studyYears]);
 
   const specialtiesForSelectedSchools = useMemo(() => {
     const out: { code: string; label: string }[] = [];
@@ -107,7 +145,12 @@ export default function AdvisorSettingsPage() {
   }, [specialtiesForSelectedSchools]);
 
   const toggleSchool = (s: string) => {
-    setSchools((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+    setSchools((prev) => {
+      const next = prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s];
+      if (next.length > 0 && !next.includes(scopeSchoolValue)) setScopeSchool(next[0] || "");
+      if (next.length === 0) setScopeSchool("");
+      return next;
+    });
   };
   const toggleLang = (id: string) => {
     setLangs((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -126,6 +169,32 @@ export default function AdvisorSettingsPage() {
     setStudyYears((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b)));
   };
 
+  const toggleScopeLang = (langId: string) => {
+    if (!scopeSchoolValue) return;
+    setSchoolScopes((prev) => {
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+      const langs = cur.langs.includes(langId) ? cur.langs.filter((x) => x !== langId) : [...cur.langs, langId];
+      return { ...prev, [scopeSchoolValue]: { ...cur, langs: langs.sort() } };
+    });
+  };
+  const toggleScopeStudyYear = (n: number) => {
+    if (!scopeSchoolValue) return;
+    setSchoolScopes((prev) => {
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+      const years = cur.studyYears.includes(n) ? cur.studyYears.filter((x) => x !== n) : [...cur.studyYears, n].sort((a, b) => a - b);
+      return { ...prev, [scopeSchoolValue]: { ...cur, studyYears: years } };
+    });
+  };
+  const applyCurrentScopeToAllSchools = () => {
+    if (!scopeSchoolValue || schools.length === 0) return;
+    setSchoolScopes((prev) => {
+      const cur = prev[scopeSchoolValue] ?? { langs: [], studyYears: [] };
+      const next: Record<string, SchoolScopeSettings> = { ...prev };
+      for (const s of schools) next[s] = { langs: [...cur.langs], studyYears: [...cur.studyYears] };
+      return next;
+    });
+  };
+
   const save = async () => {
     setMsg("");
     if (schools.length === 0) {
@@ -142,6 +211,12 @@ export default function AdvisorSettingsPage() {
         assigned_courses_json: courses,
         assigned_specialties_json: specialtyCodes,
         assigned_study_years_json: studyYears,
+        assigned_school_scopes_json: Object.fromEntries(
+          schools.map((s) => {
+            const cfg = schoolScopes[s] ?? { langs: [], studyYears: [] };
+            return [s, { langs: cfg.langs, studyYears: cfg.studyYears }];
+          })
+        ),
       }),
     });
     const js = await readJSON<any>(res);
@@ -155,9 +230,10 @@ export default function AdvisorSettingsPage() {
     setSpecialtyCodes(safeParseArray<string>(next.assigned_specialties_json).map((x) => String(x)));
     setStudyYears(
       safeParseArray<number>(next.assigned_study_years_json)
-        .map((x) => Number(x))
-        .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8)
+        .map((x) => parseStudyDuration(x))
+        .filter((n): n is number => n != null)
     );
+    setSchoolScopes(parseSchoolScopes((next as any).assigned_school_scopes_json ?? null));
     setMsg("Сохранено");
   };
 
@@ -271,6 +347,80 @@ export default function AdvisorSettingsPage() {
         </div>
 
         <div className="space-y-6">
+          <div className="ui-card p-6">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Настройки по школам</div>
+                <div className="mt-1 text-sm font-semibold text-violet-800 dark:text-sky-300">
+                  Для каждой школы можно задать свои языки и тип обучения.
+                </div>
+              </div>
+              <button type="button" onClick={applyCurrentScopeToAllSchools} className="ui-btn-ghost px-3 py-2 text-xs" disabled={!scopeSchoolValue}>
+                Применить к выбранным школам
+              </button>
+            </div>
+            <div className="mt-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">Школа</span>
+                <select
+                  value={scopeSchoolValue}
+                  onChange={(e) => setScopeSchool(e.target.value)}
+                  className="ui-input"
+                  disabled={schools.length === 0}
+                >
+                  {schools.length === 0 ? <option value="">Сначала отметьте школы слева</option> : null}
+                  {schools.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-4">
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Языки для выбранной школы</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {LANGS.map((l) => (
+                  <button
+                    key={`scope-${l.id}`}
+                    type="button"
+                    onClick={() => toggleScopeLang(l.id)}
+                    disabled={!scopeSchoolValue}
+                    className={cn(
+                      "rounded-2xl border-2 px-4 py-2.5 text-sm font-extrabold shadow-sm transition disabled:opacity-50",
+                      activeScopeLangSet.has(l.id)
+                        ? "border-emerald-400 bg-emerald-500 text-white"
+                        : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
+                    )}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Тип обучения для выбранной школы</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {STUDY_DURATION_OPTIONS.map((opt) => (
+                  <button
+                    key={`scope-year-${opt.value}`}
+                    type="button"
+                    onClick={() => toggleScopeStudyYear(opt.value)}
+                    disabled={!scopeSchoolValue}
+                    className={cn(
+                      "rounded-2xl border-2 px-4 py-2.5 text-sm font-extrabold shadow-sm transition disabled:opacity-50",
+                      activeScopeYearSet.has(opt.value)
+                        ? "border-emerald-400 bg-emerald-500 text-white"
+                        : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="ui-card p-6">
             <div className="text-[10px] font-black uppercase tracking-widest text-violet-900 dark:text-sky-300">Безопасность</div>
             <div className="mt-1 text-sm font-semibold text-violet-800 dark:text-sky-300">Смена пароля сотрудника</div>
@@ -400,19 +550,19 @@ export default function AdvisorSettingsPage() {
               </button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {[2, 3].map((n) => (
+              {STUDY_DURATION_OPTIONS.map((opt) => (
                 <button
-                  key={n}
+                  key={opt.value}
                   type="button"
-                  onClick={() => toggleStudyYear(n)}
+                  onClick={() => toggleStudyYear(opt.value)}
                   className={cn(
                     "rounded-2xl border-2 px-4 py-3 text-sm font-extrabold shadow-sm transition",
-                    studyYearSet.has(n)
+                    studyYearSet.has(opt.value)
                       ? "border-emerald-400 bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-300/90 dark:border-emerald-300 dark:bg-emerald-500 dark:text-white dark:shadow-emerald-500/50 dark:ring-emerald-400"
                       : "border-violet-200 bg-white text-violet-950 hover:bg-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-100 dark:hover:bg-slate-700"
                   )}
                 >
-                  {n} года
+                  {opt.label}
                 </button>
               ))}
             </div>

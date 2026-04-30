@@ -1,5 +1,6 @@
 import type { Advisor } from "../types";
 import type { Lang } from "../i18n";
+import { formatStudyDuration, parseStudyDuration } from "./studyDuration";
 
 function safeParseArray<T = unknown>(raw: string | null | undefined): T[] {
   if (!raw) return [];
@@ -66,8 +67,8 @@ export function formatAdvisorReceptionSummary(me: Advisor, lang: Lang): AdvisorR
   if (courses.length === 0) courses = [1, 2, 3, 4];
   const specs = safeParseArray<string>(me.assigned_specialties_json).map(String);
   const studyYears = safeParseArray<number>(me.assigned_study_years_json)
-    .map((x) => Number(x))
-    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
+    .map((x) => parseStudyDuration(x))
+    .filter((n): n is number => n != null);
 
   const sep = lang === "eng" ? ", " : " · ";
   const schoolsLine = schools.length > 0 ? schools.join(sep) : "—";
@@ -90,10 +91,14 @@ export function formatAdvisorReceptionSummary(me: Advisor, lang: Lang): AdvisorR
   const deskPart = desk ? windowLabel(lang, desk) : "";
   let yearsPart = "";
   if (studyYears.length > 0) {
-    const list = studyYears.sort((a, b) => a - b).join(", ");
-    if (lang === "eng") yearsPart = `Study years: ${list}`;
-    else if (lang === "kaz") yearsPart = `Оқу мерзімі: ${list}`;
-    else yearsPart = `Срок обучения: ${list}`;
+    const list = studyYears
+      .slice()
+      .sort((a, b) => a - b)
+      .map((x) => formatStudyDuration(x))
+      .join(", ");
+    if (lang === "eng") yearsPart = `Study type: ${list}`;
+    else if (lang === "kaz") yearsPart = `Оқу түрі: ${list}`;
+    else yearsPart = `Тип обучения: ${list}`;
   }
 
   const scopeLine = [langPart, coursePart, yearsPart, specPart, deskPart].filter(Boolean).join(" · ");

@@ -55,6 +55,7 @@ export type Advisor = {
   assigned_courses_json?: string | null;
   assigned_specialties_json?: string | null;
   assigned_study_years_json?: string | null;
+  assigned_school_scopes_json?: string | null;
   /** Суммарное отработанное время на сервере (мс), см. advisor_work_totals */
   total_work_ms?: number;
   /** Запись в свою зону приёма (1 = открыта) */

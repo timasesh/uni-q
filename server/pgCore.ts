@@ -25,6 +25,7 @@ export async function ensurePgCoreSchema(): Promise<void> {
   await q("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS study_duration_years INTEGER");
   await q("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS route_advisor_id INTEGER");
   await q("ALTER TABLE advisors ADD COLUMN IF NOT EXISTS assigned_study_years_json TEXT");
+  await q("ALTER TABLE advisors ADD COLUMN IF NOT EXISTS assigned_school_scopes_json TEXT");
 }
 
 async function q(sql: string, params: unknown[] = []): Promise<pg.QueryResult<any>> {
@@ -71,42 +72,69 @@ export async function pgFaqNoQueue(from?: string | null, to?: string | null): Pr
 }
 
 export async function pgAdminLoad(dateStr: string): Promise<{
-  date: string;
-  startHour: number;
-  endHour: number;
-  registrations: { hour: number; count: number }[];
-  calls: { hour: number; count: number }[];
+  year: number;
+  month: number;
+  daily: { day: number; registrations: number; calls: number }[];
+  monthly: { month: number; registrations: number; calls: number }[];
 }> {
-  const startHour = 9;
-  const endHour = 18;
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(dateStr));
+  const year = m ? Number(m[1]) : NaN;
+  const month = m ? Number(m[2]) : NaN;
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("invalid date");
+  }
   const [regRows, callRows] = await Promise.all([
     q(
-      `SELECT EXTRACT(HOUR FROM (created_at AT TIME ZONE $1))::int AS hour, COUNT(*)::int AS c
+      `SELECT EXTRACT(DAY FROM (created_at AT TIME ZONE $1))::int AS k, COUNT(*)::int AS c
        FROM tickets
-       WHERE (created_at AT TIME ZONE $1)::date = $2::date
-         AND EXTRACT(HOUR FROM (created_at AT TIME ZONE $1)) BETWEEN $3 AND $4
+       WHERE EXTRACT(YEAR FROM (created_at AT TIME ZONE $1))::int = $2
+         AND EXTRACT(MONTH FROM (created_at AT TIME ZONE $1))::int = $3
        GROUP BY 1`,
-      [REPORT_TZ, dateStr, startHour, endHour]
+      [REPORT_TZ, year, month]
     ),
     q(
-      `SELECT EXTRACT(HOUR FROM (called_at AT TIME ZONE $1))::int AS hour, COUNT(*)::int AS c
+      `SELECT EXTRACT(DAY FROM (called_at AT TIME ZONE $1))::int AS k, COUNT(*)::int AS c
        FROM tickets
        WHERE called_at IS NOT NULL
-         AND (called_at AT TIME ZONE $1)::date = $2::date
-         AND EXTRACT(HOUR FROM (called_at AT TIME ZONE $1)) BETWEEN $3 AND $4
+         AND EXTRACT(YEAR FROM (called_at AT TIME ZONE $1))::int = $2
+         AND EXTRACT(MONTH FROM (called_at AT TIME ZONE $1))::int = $3
        GROUP BY 1`,
-      [REPORT_TZ, dateStr, startHour, endHour]
+      [REPORT_TZ, year, month]
     ),
   ]);
-  const regMap = new Map<number, number>(regRows.rows.map((r) => [Number(r.hour), Number(r.c)]));
-  const callMap = new Map<number, number>(callRows.rows.map((r) => [Number(r.hour), Number(r.c)]));
-  const registrations = [];
-  const calls = [];
-  for (let h = startHour; h <= endHour; h++) {
-    registrations.push({ hour: h, count: regMap.get(h) ?? 0 });
-    calls.push({ hour: h, count: callMap.get(h) ?? 0 });
+
+  const [regMonthRows, callMonthRows] = await Promise.all([
+    q(
+      `SELECT EXTRACT(MONTH FROM (created_at AT TIME ZONE $1))::int AS k, COUNT(*)::int AS c
+       FROM tickets
+       WHERE EXTRACT(YEAR FROM (created_at AT TIME ZONE $1))::int = $2
+       GROUP BY 1`,
+      [REPORT_TZ, year]
+    ),
+    q(
+      `SELECT EXTRACT(MONTH FROM (called_at AT TIME ZONE $1))::int AS k, COUNT(*)::int AS c
+       FROM tickets
+       WHERE called_at IS NOT NULL
+         AND EXTRACT(YEAR FROM (called_at AT TIME ZONE $1))::int = $2
+       GROUP BY 1`,
+      [REPORT_TZ, year]
+    ),
+  ]);
+
+  const regDayMap = new Map<number, number>(regRows.rows.map((r) => [Number(r.k), Number(r.c)]));
+  const callDayMap = new Map<number, number>(callRows.rows.map((r) => [Number(r.k), Number(r.c)]));
+  const regMonthMap = new Map<number, number>(regMonthRows.rows.map((r) => [Number(r.k), Number(r.c)]));
+  const callMonthMap = new Map<number, number>(callMonthRows.rows.map((r) => [Number(r.k), Number(r.c)]));
+
+  const daily: { day: number; registrations: number; calls: number }[] = [];
+  for (let d = 1; d <= 31; d++) {
+    daily.push({ day: d, registrations: regDayMap.get(d) ?? 0, calls: callDayMap.get(d) ?? 0 });
   }
-  return { date: dateStr, startHour, endHour, registrations, calls };
+  const monthly: { month: number; registrations: number; calls: number }[] = [];
+  for (let mm = 1; mm <= 12; mm++) {
+    monthly.push({ month: mm, registrations: regMonthMap.get(mm) ?? 0, calls: callMonthMap.get(mm) ?? 0 });
+  }
+  return { year, month, daily, monthly };
 }
 
 export async function pgAdminBookings(from: string, to: string, status?: string, school?: string): Promise<any[]> {
@@ -277,7 +305,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
     queue_session: sqliteRows(db, "SELECT id, is_active, created_at FROM queue_session ORDER BY id ASC"),
     advisors: sqliteRows(
       db,
-      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, reception_open FROM advisors ORDER BY id ASC"
+      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json, reception_open FROM advisors ORDER BY id ASC"
     ),
     admin_users: sqliteRows(db, "SELECT id, login, password_hash, name FROM admin_users ORDER BY id ASC"),
     advisor_work_totals: sqliteRows(
@@ -342,6 +370,7 @@ export async function pgSyncCoreFromSqlite(db: Database.Database): Promise<void>
         "assigned_courses_json",
         "assigned_specialties_json",
         "assigned_study_years_json",
+        "assigned_school_scopes_json",
         "reception_open",
       ],
       snapshot.advisors
@@ -455,7 +484,7 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
   ] = await Promise.all([
     q("SELECT id, is_active, created_at FROM queue_session ORDER BY id ASC"),
     q(
-      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, reception_open FROM advisors ORDER BY id ASC"
+      "SELECT id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json, reception_open FROM advisors ORDER BY id ASC"
     ),
     q("SELECT id, login, password_hash, name FROM admin_users ORDER BY id ASC"),
     q("SELECT advisor_id, total_ms, updated_at FROM advisor_work_totals ORDER BY advisor_id ASC"),
@@ -494,8 +523,8 @@ export async function pgRestoreCoreToSqlite(db: Database.Database): Promise<void
     if (shouldRestoreAdvisors) {
       for (const r of advisors.rows) {
         db.prepare(
-          `INSERT INTO advisors (id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, reception_open)
-           VALUES (@id, @name, @faculty, @department, @desk_number, @login, @password_hash, @assigned_schools_json, @assigned_language, @assigned_languages_json, @assigned_courses_json, @assigned_specialties_json, @assigned_study_years_json, @reception_open)`
+          `INSERT INTO advisors (id, name, faculty, department, desk_number, login, password_hash, assigned_schools_json, assigned_language, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json, reception_open)
+           VALUES (@id, @name, @faculty, @department, @desk_number, @login, @password_hash, @assigned_schools_json, @assigned_language, @assigned_languages_json, @assigned_courses_json, @assigned_specialties_json, @assigned_study_years_json, @assigned_school_scopes_json, @reception_open)`
         ).run(r as any);
       }
     }

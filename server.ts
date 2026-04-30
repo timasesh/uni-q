@@ -32,6 +32,7 @@ import {
   pgSyncCoreFromSqlite,
 } from "./server/pgCore.js";
 import { backendInstantMs } from "./src/lib/backendDateTime.ts";
+import { parseStudyDuration } from "./src/lib/studyDuration.ts";
 
 type TicketStatus = "WAITING" | "CALLED" | "IN_SERVICE" | "MISSED" | "DONE" | "CANCELLED";
 
@@ -41,6 +42,7 @@ type AdvisorScope = {
   assigned_courses_json: string; // JSON array
   assigned_specialties_json: string | null; // JSON array
   assigned_study_years_json: string | null; // JSON array, null/[] => any
+  assigned_school_scopes_json?: string | null; // JSON object by school
 };
 
 type StudentSession = {
@@ -147,7 +149,8 @@ CREATE TABLE IF NOT EXISTS advisors (
   assigned_languages_json TEXT,
   assigned_courses_json TEXT,
   assigned_specialties_json TEXT,
-  assigned_study_years_json TEXT
+  assigned_study_years_json TEXT,
+  assigned_school_scopes_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tickets (
@@ -239,6 +242,9 @@ function migrateDb() {
   }
   if (!advisorNames.has("assigned_study_years_json")) {
     db.exec("ALTER TABLE advisors ADD COLUMN assigned_study_years_json TEXT");
+  }
+  if (!advisorNames.has("assigned_school_scopes_json")) {
+    db.exec("ALTER TABLE advisors ADD COLUMN assigned_school_scopes_json TEXT");
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS advisor_work_daily (
@@ -476,7 +482,10 @@ function minutesBetweenTimestamps(a: unknown, b: unknown): number | null {
   const t0 = backendInstantMs(a);
   const t1 = backendInstantMs(b);
   if (t0 == null || t1 == null) return null;
-  return Math.round((t1 - t0) / 60000);
+  const mins = (t1 - t0) / 60000;
+  if (!Number.isFinite(mins) || mins < 0) return null;
+  if (mins > 0 && mins < 1) return 1;
+  return Math.round(mins);
 }
 
 function reopenEligibleForLogRow(logFinishedAt: unknown, ticketRow: { status?: string; finished_at?: unknown } | undefined): number {
@@ -510,7 +519,7 @@ function advisorsRowsForRouting(): any[] {
   return db
     .prepare(
       `SELECT id, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json
-              , assigned_study_years_json
+              , assigned_study_years_json, assigned_school_scopes_json
        FROM advisors`
     )
     .all() as any[];
@@ -531,6 +540,7 @@ function pickRouteAdvisorIdForTicket(ticket: any, advisorRows: any[]): number | 
       assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
       assigned_specialties_json: a.assigned_specialties_json ?? null,
       assigned_study_years_json: a.assigned_study_years_json ?? null,
+      assigned_school_scopes_json: a.assigned_school_scopes_json ?? null,
     };
     if (!ticketMatchesScope(ticket, scope)) continue;
     const id = Number(a.id);
@@ -550,6 +560,7 @@ function visibleAdvisorIdsForTicket(ticket: any, advisorRows: any[]): number[] {
       assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
       assigned_specialties_json: a.assigned_specialties_json ?? null,
       assigned_study_years_json: a.assigned_study_years_json ?? null,
+      assigned_school_scopes_json: a.assigned_school_scopes_json ?? null,
     };
     if (!ticketMatchesScope(ticket, scope)) continue;
     const id = Number(a.id);
@@ -582,6 +593,28 @@ function recomputeRouteOwnersForWaitingTickets() {
   }
 }
 
+type SchoolScopedFilters = { langs: string[] | null; studyYears: number[] | null };
+
+function parseSchoolScopedFilters(raw: string | null | undefined): Record<string, SchoolScopedFilters> {
+  const out: Record<string, SchoolScopedFilters> = {};
+  if (!raw) return out;
+  try {
+    const obj = JSON.parse(raw) as Record<string, any>;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return out;
+    for (const [school, cfg] of Object.entries(obj)) {
+      if (!cfg || typeof cfg !== "object") continue;
+      const langRaw = Array.isArray((cfg as any).langs) ? (cfg as any).langs : [];
+      const langs = langRaw.map((x: any) => String(x).toLowerCase()).filter((x: string) => x.length > 0);
+      const yearsRaw = Array.isArray((cfg as any).studyYears) ? (cfg as any).studyYears : [];
+      const studyYears = yearsRaw.map((x: any) => parseStudyDuration(x)).filter((n: any): n is number => n != null);
+      out[school] = { langs: langs.length > 0 ? langs : null, studyYears: studyYears.length > 0 ? studyYears : null };
+    }
+  } catch {
+    return out;
+  }
+  return out;
+}
+
 function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   const norm = (s: unknown) =>
     String(s ?? "")
@@ -593,6 +626,7 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   let courses: number[] = [1, 2, 3, 4];
   let specs: string[] | null = null;
   let studyYears: number[] | null = null;
+  let perSchool: Record<string, SchoolScopedFilters> = {};
   try {
     schools = JSON.parse(scope.assigned_schools_json || "[]");
   } catch {
@@ -619,20 +653,27 @@ function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
   try {
     const y = scope.assigned_study_years_json ? JSON.parse(scope.assigned_study_years_json) : null;
     if (Array.isArray(y) && y.length > 0) {
-      const ys = y.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
+      const ys = y
+        .map((x) => parseStudyDuration(x))
+        .filter((n): n is number => n != null);
       if (ys.length > 0) studyYears = ys;
     }
   } catch {
     studyYears = null;
   }
+  perSchool = parseSchoolScopedFilters(scope.assigned_school_scopes_json);
 
+  const school = String(ticket.school || ticket.faculty || "");
   if (schools.length > 0) {
-    const school = String(ticket.school || ticket.faculty || "");
     if (!school) return false;
     const schoolN = norm(school);
     const allowed = new Set(schools.map((x) => norm(x)));
     if (!allowed.has(schoolN)) return false;
   }
+  const schoolScoped = Object.entries(perSchool).find(([k]) => norm(k) === norm(school))?.[1];
+  if (schoolScoped?.langs && schoolScoped.langs.length > 0) langs = schoolScoped.langs;
+  if (schoolScoped?.studyYears && schoolScoped.studyYears.length > 0) studyYears = schoolScoped.studyYears;
+
   if (langs && langs.length > 0) {
     const lang = String(ticket.language_section || "").toLowerCase();
     if (!langs.includes(lang) && !langs.includes("any")) return false;
@@ -663,11 +704,11 @@ function registrationOpenForStudent(body: {
     language_section: String(body.language_section || "").trim(),
     course: String(body.course || "").trim(),
     specialty_code: String(body.specialty_code || "").trim(),
-    study_duration_years: Number(body.study_duration_years),
+    study_duration_years: parseStudyDuration(body.study_duration_years),
   };
   const advisors = db
     .prepare(
-      `SELECT id, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json
+      `SELECT id, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json
        FROM advisors`
     )
     .all() as any[];
@@ -680,6 +721,7 @@ function registrationOpenForStudent(body: {
       assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
       assigned_specialties_json: a.assigned_specialties_json ?? null,
       assigned_study_years_json: a.assigned_study_years_json ?? null,
+      assigned_school_scopes_json: a.assigned_school_scopes_json ?? null,
     };
     if (ticketMatchesScope(pseudo, scope)) {
       matchesAny = true;
@@ -774,7 +816,7 @@ app.post("/api/registration/check", (req, res) => {
     specialty_code: String(specialtyCode || ""),
     language_section: String(languageSection || ""),
     course: String(course || ""),
-    study_duration_years: Number(studyDurationYears),
+    study_duration_years: parseStudyDuration(studyDurationYears) ?? undefined,
   });
   res.json(result);
 });
@@ -1120,7 +1162,7 @@ app.get("/api/managers/me", requireManager, (req, res) => {
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number,
               COALESCE(a.reception_open, 1) AS reception_open,
               a.assigned_schools_json, a.assigned_language,
-              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json, a.assigned_study_years_json,
+              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json, a.assigned_study_years_json, a.assigned_school_scopes_json,
               COALESCE(w.total_ms, 0) AS total_work_ms
        FROM advisors a
        LEFT JOIN advisor_work_totals w ON w.advisor_id = a.id
@@ -1143,7 +1185,7 @@ app.patch("/api/managers/me/reception", requireManager, (req, res) => {
       `SELECT a.id, a.name, a.faculty, a.department, a.desk_number,
               COALESCE(a.reception_open, 1) AS reception_open,
               a.assigned_schools_json, a.assigned_language,
-              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json, a.assigned_study_years_json,
+              a.assigned_languages_json, a.assigned_courses_json, a.assigned_specialties_json, a.assigned_study_years_json, a.assigned_school_scopes_json,
               COALESCE(w.total_ms, 0) AS total_work_ms
        FROM advisors a
        LEFT JOIN advisor_work_totals w ON w.advisor_id = a.id
@@ -1279,8 +1321,12 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
   const courses = Array.isArray(body.assigned_courses_json) ? body.assigned_courses_json.map((x: any) => Number(x)).filter((n: number) => n >= 1 && n <= 4) : [1, 2, 3, 4];
   const specs = Array.isArray(body.assigned_specialties_json) ? body.assigned_specialties_json.map(String) : [];
   const studyYears = Array.isArray(body.assigned_study_years_json)
-    ? body.assigned_study_years_json.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 8)
+    ? body.assigned_study_years_json.map((x: any) => parseStudyDuration(x)).filter((n: any): n is number => n != null)
     : [];
+  const schoolScopesRaw = body.assigned_school_scopes_json;
+  const schoolScopes = parseSchoolScopedFilters(
+    schoolScopesRaw && typeof schoolScopesRaw === "object" ? JSON.stringify(schoolScopesRaw) : null
+  );
 
   if (schools.length === 0) return res.status(400).json({ error: "Выберите хотя бы одну школу" });
 
@@ -1290,7 +1336,8 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
          assigned_languages_json = ?,
          assigned_courses_json = ?,
          assigned_specialties_json = ?,
-         assigned_study_years_json = ?
+         assigned_study_years_json = ?,
+         assigned_school_scopes_json = ?
      WHERE id = ?`
   ).run(
     JSON.stringify(schools),
@@ -1298,6 +1345,7 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
     JSON.stringify(courses.length > 0 ? courses : [1, 2, 3, 4]),
     specs.length > 0 ? JSON.stringify(specs) : null,
     studyYears.length > 0 ? JSON.stringify(studyYears) : null,
+    Object.keys(schoolScopes).length > 0 ? JSON.stringify(schoolScopes) : null,
     advisorId
   );
   recomputeRouteOwnersForWaitingTickets();
@@ -1305,7 +1353,7 @@ app.patch("/api/managers/me/scope", requireManager, (req, res) => {
   const row = db
     .prepare(
       `SELECT id, name, faculty, department, desk_number, assigned_schools_json, assigned_language,
-              assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json
+              assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json
        FROM advisors WHERE id = ?`
     )
     .get(advisorId);
@@ -1317,9 +1365,23 @@ app.get("/api/queue/live", (_req, res) => res.json(getLiveQueue()));
 
 app.get("/api/admin/queues/all", requireAdmin, (_req, res) => {
   const advisors = db
-    .prepare("SELECT id, name, desk_number FROM advisors ORDER BY id ASC")
-    .all() as { id: number; name: string; desk_number: string | null }[];
-  const byId = new Map<number, { id: number; name: string; desk_number: string | null }>();
+    .prepare(
+      `SELECT id, name, desk_number, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json
+       FROM advisors
+       ORDER BY id ASC`
+    )
+    .all() as {
+    id: number;
+    name: string;
+    desk_number: string | null;
+    assigned_schools_json: string | null;
+    assigned_languages_json: string | null;
+    assigned_courses_json: string | null;
+    assigned_specialties_json: string | null;
+    assigned_study_years_json: string | null;
+    assigned_school_scopes_json: string | null;
+  }[];
+  const byId = new Map<number, (typeof advisors)[number]>();
   for (const a of advisors) byId.set(Number(a.id), a);
 
   const rows = db
@@ -1340,12 +1402,31 @@ app.get("/api/admin/queues/all", requireAdmin, (_req, res) => {
     const activeAdvisorId = Number(r.advisor_id);
     const ownerId = r.status === "WAITING" ? (Number.isFinite(routeId) ? routeId : null) : Number.isFinite(activeAdvisorId) ? activeAdvisorId : null;
     const owner = ownerId != null ? byId.get(ownerId) : undefined;
+
+    let waitingTargets: (typeof advisors)[number][] = [];
+    if (String(r.status || "").toUpperCase() === "WAITING") {
+      waitingTargets = advisors.filter((a) =>
+        ticketMatchesScope(r, {
+          assigned_schools_json: a.assigned_schools_json ?? "[]",
+          assigned_languages_json: a.assigned_languages_json ?? null,
+          assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
+          assigned_specialties_json: a.assigned_specialties_json ?? null,
+          assigned_study_years_json: a.assigned_study_years_json ?? null,
+          assigned_school_scopes_json: a.assigned_school_scopes_json ?? null,
+        })
+      );
+    }
+    const waitingNames = waitingTargets.map((a) => a.name).filter(Boolean);
+    const waitingDesks = waitingTargets
+      .map((a) => String(a.desk_number || "").trim())
+      .filter((x) => x.length > 0)
+      .join(", ");
     return {
       ...r,
       formatted_number: formatQueueNumber(Number(r.queue_number)),
-      owner_manager_id: owner?.id ?? null,
-      owner_manager_name: owner?.name ?? r.advisor_name ?? null,
-      owner_manager_desk: owner?.desk_number ?? r.advisor_desk ?? null,
+      owner_manager_id: owner?.id ?? (waitingTargets[0]?.id ?? null),
+      owner_manager_name: owner?.name ?? r.advisor_name ?? (waitingNames.length ? waitingNames.join(", ") : null),
+      owner_manager_desk: owner?.desk_number ?? r.advisor_desk ?? (waitingDesks || null),
     };
   });
   res.json({ rows: out });
@@ -1364,12 +1445,23 @@ app.post("/api/tickets", (req, res) => {
     preferredSlotAt,
   } = (req.body || {}) as any;
 
+  if (!String(firstName || "").trim() || !String(lastName || "").trim() || !String(school || "").trim()) {
+    return res.status(400).json({ error: "Заполните имя, фамилию и школу" });
+  }
+  if (!String(languageSection || "").trim() || !String(course || "").trim() || !String(specialtyCode || "").trim()) {
+    return res.status(400).json({ error: "Заполните все поля профиля" });
+  }
+  const studyDuration = parseStudyDuration(studyDurationYears);
+  if (studyDuration == null) {
+    return res.status(400).json({ error: "Выберите тип обучения" });
+  }
+
   const reg = registrationOpenForStudent({
     school: String(school || ""),
     specialty_code: String(specialtyCode || ""),
     language_section: String(languageSection || ""),
     course: String(course || ""),
-    study_duration_years: Number(studyDurationYears),
+    study_duration_years: studyDuration,
   });
   if (!reg.matchesAny) {
     return res.status(409).json({ error: "Нет линии приёма для указанных данных" });
@@ -1402,7 +1494,7 @@ app.post("/api/tickets", (req, res) => {
       specialty_code: String(specialtyCode || "").trim(),
       language_section: String(languageSection || "").trim(),
       course: String(course || "").trim(),
-      study_duration_years: Number.isFinite(Number(studyDurationYears)) ? Number(studyDurationYears) : null,
+      study_duration_years: studyDuration,
     },
     advisorsRowsForRouting()
   );
@@ -1420,7 +1512,7 @@ app.post("/api/tickets", (req, res) => {
     specCode: String(specialtyCode || "").trim(),
     lang: String(languageSection || "").trim(),
     course: String(course || "").trim(),
-    studyYears: Number.isFinite(Number(studyDurationYears)) ? Number(studyDurationYears) : null,
+    studyYears: studyDuration,
     routeAdvisorId,
     slot,
   });
@@ -1474,7 +1566,7 @@ app.post("/api/tickets/call-next", requireManager, (req, res) => {
 
   const advisorRow = db
     .prepare(
-      "SELECT id, name, desk_number, faculty, department, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json FROM advisors WHERE id = ?"
+      "SELECT id, name, desk_number, faculty, department, reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json FROM advisors WHERE id = ?"
     )
     .get(advisorId) as any;
   if (!advisorRow) return res.status(404).json({ error: "Сотрудник не найден" });
@@ -1494,6 +1586,7 @@ app.post("/api/tickets/call-next", requireManager, (req, res) => {
     assigned_courses_json: advisorRow.assigned_courses_json ?? "[1,2,3,4]",
     assigned_specialties_json: advisorRow.assigned_specialties_json ?? null,
     assigned_study_years_json: advisorRow.assigned_study_years_json ?? null,
+    assigned_school_scopes_json: advisorRow.assigned_school_scopes_json ?? null,
   };
   const next = waiting.find((t) => ticketMatchesScope(t, scope) && bookingCallableNow(t.preferred_slot_at, now));
   if (!next) {
@@ -1536,7 +1629,7 @@ app.post("/api/tickets/:id/call-booked", requireManager, (req, res) => {
 
   const a = db
     .prepare(
-      "SELECT reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json FROM advisors WHERE id = ?"
+      "SELECT reception_open, assigned_schools_json, assigned_languages_json, assigned_courses_json, assigned_specialties_json, assigned_study_years_json, assigned_school_scopes_json FROM advisors WHERE id = ?"
     )
     .get(advisorId) as any;
   if (!a) return res.status(404).json({ error: "Сотрудник не найден" });
@@ -1547,6 +1640,7 @@ app.post("/api/tickets/:id/call-booked", requireManager, (req, res) => {
     assigned_courses_json: a.assigned_courses_json ?? "[1,2,3,4]",
     assigned_specialties_json: a.assigned_specialties_json ?? null,
     assigned_study_years_json: a.assigned_study_years_json ?? null,
+    assigned_school_scopes_json: a.assigned_school_scopes_json ?? null,
   };
   if (!ticketMatchesScope(row, scope)) {
     return res.status(403).json({ error: "Этот талон не относится к вашей зоне приёма" });
@@ -2119,7 +2213,7 @@ app.get("/api/admin/stats/bookings", requireAdmin, async (req, res) => {
   });
 });
 
-/** Нагрузка по часам (локальное время): регистрации талонов и вызовы к окну, 9:00–18:00. */
+/** Нагрузка по дням выбранного месяца и по месяцам выбранного года. */
 app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
   const dateStr = String(req.query.date || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -2132,47 +2226,61 @@ app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
       console.error("[pg admin load]", e);
     }
   }
-  const startHour = 9;
-  const endHour = 18;
+  const year = Number(dateStr.slice(0, 4));
+  const month = Number(dateStr.slice(5, 7));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return res.status(400).json({ error: "Некорректная дата" });
+  }
 
-  const regRows = db
+  const regDayRows = db
     .prepare(
-      `SELECT CAST(strftime('%H', created_at, 'localtime') AS INTEGER) AS hour, COUNT(*) AS c
+      `SELECT CAST(strftime('%d', created_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
        FROM tickets
-       WHERE date(created_at, 'localtime') = ?
-         AND CAST(strftime('%H', created_at, 'localtime') AS INTEGER) BETWEEN ? AND ?
-       GROUP BY CAST(strftime('%H', created_at, 'localtime') AS INTEGER)`
+       WHERE strftime('%Y', created_at, 'localtime') = ?
+         AND strftime('%m', created_at, 'localtime') = ?
+       GROUP BY CAST(strftime('%d', created_at, 'localtime') AS INTEGER)`
     )
-    .all(dateStr, startHour, endHour) as { hour: number; c: number }[];
-
-  const callRows = db
+    .all(String(year), String(month).padStart(2, "0")) as { k: number; c: number }[];
+  const callDayRows = db
     .prepare(
-      `SELECT CAST(strftime('%H', called_at, 'localtime') AS INTEGER) AS hour, COUNT(*) AS c
+      `SELECT CAST(strftime('%d', called_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
        FROM tickets
        WHERE called_at IS NOT NULL
-         AND date(called_at, 'localtime') = ?
-         AND CAST(strftime('%H', called_at, 'localtime') AS INTEGER) BETWEEN ? AND ?
-       GROUP BY CAST(strftime('%H', called_at, 'localtime') AS INTEGER)`
+         AND strftime('%Y', called_at, 'localtime') = ?
+         AND strftime('%m', called_at, 'localtime') = ?
+       GROUP BY CAST(strftime('%d', called_at, 'localtime') AS INTEGER)`
     )
-    .all(dateStr, startHour, endHour) as { hour: number; c: number }[];
+    .all(String(year), String(month).padStart(2, "0")) as { k: number; c: number }[];
 
-  const regMap = new Map<number, number>();
-  for (const r of regRows) {
-    if (r.hour != null && Number.isFinite(Number(r.hour))) regMap.set(Number(r.hour), Number(r.c));
-  }
-  const callMap = new Map<number, number>();
-  for (const r of callRows) {
-    if (r.hour != null && Number.isFinite(Number(r.hour))) callMap.set(Number(r.hour), Number(r.c));
-  }
+  const regMonthRows = db
+    .prepare(
+      `SELECT CAST(strftime('%m', created_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
+       FROM tickets
+       WHERE strftime('%Y', created_at, 'localtime') = ?
+       GROUP BY CAST(strftime('%m', created_at, 'localtime') AS INTEGER)`
+    )
+    .all(String(year)) as { k: number; c: number }[];
+  const callMonthRows = db
+    .prepare(
+      `SELECT CAST(strftime('%m', called_at, 'localtime') AS INTEGER) AS k, COUNT(*) AS c
+       FROM tickets
+       WHERE called_at IS NOT NULL
+         AND strftime('%Y', called_at, 'localtime') = ?
+       GROUP BY CAST(strftime('%m', called_at, 'localtime') AS INTEGER)`
+    )
+    .all(String(year)) as { k: number; c: number }[];
 
-  const registrations: { hour: number; count: number }[] = [];
-  const calls: { hour: number; count: number }[] = [];
-  for (let h = startHour; h <= endHour; h++) {
-    registrations.push({ hour: h, count: regMap.get(h) ?? 0 });
-    calls.push({ hour: h, count: callMap.get(h) ?? 0 });
-  }
+  const regDayMap = new Map<number, number>(regDayRows.map((r) => [Number(r.k), Number(r.c)]));
+  const callDayMap = new Map<number, number>(callDayRows.map((r) => [Number(r.k), Number(r.c)]));
+  const regMonthMap = new Map<number, number>(regMonthRows.map((r) => [Number(r.k), Number(r.c)]));
+  const callMonthMap = new Map<number, number>(callMonthRows.map((r) => [Number(r.k), Number(r.c)]));
 
-  res.json({ date: dateStr, startHour, endHour, registrations, calls });
+  const daily: { day: number; registrations: number; calls: number }[] = [];
+  for (let d = 1; d <= 31; d++) daily.push({ day: d, registrations: regDayMap.get(d) ?? 0, calls: callDayMap.get(d) ?? 0 });
+  const monthly: { month: number; registrations: number; calls: number }[] = [];
+  for (let mm = 1; mm <= 12; mm++) monthly.push({ month: mm, registrations: regMonthMap.get(mm) ?? 0, calls: callMonthMap.get(mm) ?? 0 });
+
+  res.json({ year, month, daily, monthly });
 });
 
 function csvCell(v: unknown): string {

@@ -15,7 +15,6 @@ import {
   Settings,
   HelpCircle,
   Download,
-  Clock,
   Star,
   Activity,
   CalendarClock,
@@ -23,6 +22,7 @@ import {
   LineChart,
   Trash2,
   X,
+  Home,
 } from "lucide-react";
 import { fetchJSON, readJSON } from "../api";
 import { useI18n, type Lang } from "../i18n";
@@ -34,6 +34,7 @@ import SchemeImage from "../components/SchemeImage";
 import { AppLogo } from "../lib/brand";
 import { parseBackendDateTime } from "../lib/backendDateTime";
 import { SCHOOL_NAMES } from "../schools";
+import { formatStudyDuration, parseStudyDuration } from "../lib/studyDuration";
 
 function formatHm(ms: number) {
   const s = Math.floor(Math.max(0, ms) / 1000);
@@ -55,6 +56,13 @@ function formatLocalDateTime(raw: string | null | undefined, options?: Intl.Date
   const d = parseBackendDateTime(raw);
   if (!d) return "—";
   return d.toLocaleString([], options ?? { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatMinDisplay(value: number | null | undefined, minShort: string): string {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  const n = Number(value);
+  const shown = n > 0 && n < 1 ? 1 : n;
+  return `${shown} ${minShort}`;
 }
 
 function ticketStatusLabel(status: string, t: (k: string) => string): string {
@@ -109,13 +117,13 @@ function formatReception(row: AdvisorRow): string {
   }
   const specs = safeParseArray<string>(row.assigned_specialties_json, []);
   const studyYears = safeParseArray<number>(row.assigned_study_years_json, [])
-    .map((x) => Number(x))
-    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
+    .map((x) => parseStudyDuration(x))
+    .filter((n): n is number => n != null);
   const parts: string[] = [];
   if (schools.length) parts.push(`Школы: ${schools.join(", ")}`);
   parts.push(langs?.length ? `Языки: ${langs.join(", ")}` : "Языки: любые");
   parts.push(`Курсы: ${(courses.length ? courses : [1, 2, 3, 4]).join(", ")}`);
-  if (studyYears.length) parts.push(`ТиПО: ${studyYears.join(", ")} г.`);
+  if (studyYears.length) parts.push(`ТиПО: ${studyYears.map((n) => formatStudyDuration(n)).join(", ")}`);
   if (specs.length) parts.push(`Спец.: ${specs.join(", ")}`);
   return parts.join(" · ");
 }
@@ -148,7 +156,7 @@ function AdminLogin() {
     const j = await readJSON<AdminUser>(res);
     setManagerId(null);
     setAdminUser({ id: j.id, login: j.login, name: j.name });
-    nav("/admin/employees", { replace: true });
+    nav("/admin/dashboard", { replace: true });
     setBusy(false);
   };
 
@@ -217,9 +225,9 @@ function AdminTabNav() {
     );
   return (
     <nav className="flex flex-wrap gap-1 border-b border-violet-100 bg-white px-2 shadow-sm dark:border-white/10 dark:bg-slate-900/80">
-      <NavLink to="/admin/employees" className={tabCls}>
-        <Users className="h-4 w-4 opacity-80" aria-hidden />
-        {t("adminEmployees")}
+      <NavLink to="/admin/dashboard" className={tabCls}>
+        <Home className="h-4 w-4 opacity-80" aria-hidden />
+        Главная
       </NavLink>
       <NavLink to="/admin/stats" className={tabCls}>
         <BarChart3 className="h-4 w-4 opacity-80" aria-hidden />
@@ -638,11 +646,10 @@ function AdminWindows() {
 }
 
 type AdminLoadResponse = {
-  date: string;
-  startHour: number;
-  endHour: number;
-  registrations: { hour: number; count: number }[];
-  calls: { hour: number; count: number }[];
+  year: number;
+  month: number;
+  daily: { day: number; registrations: number; calls: number }[];
+  monthly: { month: number; registrations: number; calls: number }[];
 };
 
 function localYmdDaysAgo(days: number): string {
@@ -676,6 +683,11 @@ function AdminLoad() {
   const [data, setData] = useState<AdminLoadResponse | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
+  const modeOptions = [
+    { id: "daily", label: "По дням (1-31)" },
+    { id: "monthly", label: "По месяцам (1-12)" },
+  ] as const;
+  const [mode, setMode] = useState<(typeof modeOptions)[number]["id"]>("daily");
 
   useEffect(() => {
     let cancelled = false;
@@ -702,30 +714,52 @@ function AdminLoad() {
     };
   }, [date]);
 
+  const points = useMemo(() => {
+    if (!data) return [];
+    return mode === "daily"
+      ? data.daily.map((p) => ({ key: p.day, label: String(p.day), registrations: p.registrations, calls: p.calls }))
+      : data.monthly.map((p) => ({ key: p.month, label: String(p.month), registrations: p.registrations, calls: p.calls }));
+  }, [data, mode]);
+
   const maxCount = useMemo(() => {
     if (!data) return 1;
     let m = 1;
-    for (const p of data.registrations) m = Math.max(m, p.count);
-    for (const p of data.calls) m = Math.max(m, p.count);
+    for (const p of points) m = Math.max(m, p.registrations, p.calls);
     return m;
-  }, [data]);
+  }, [data, points]);
 
   return (
     <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
       <h2 className="mb-2 text-base font-black text-violet-950 dark:text-white">{t("adminLoadTitle")}</h2>
       <p className="mb-5 text-sm font-medium leading-relaxed text-violet-700 dark:text-violet-300">{t("adminLoadHint")}</p>
 
-      <label className="mb-6 flex flex-wrap items-center gap-3">
-        <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-          {t("adminLoadPickDate")}
-        </span>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
-        />
-      </label>
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+            {t("adminLoadPickDate")}
+          </span>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">Режим</span>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as (typeof modeOptions)[number]["id"])}
+            className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+          >
+            {modeOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {err && <div className="mb-4 text-sm font-semibold text-rose-600">{err}</div>}
 
@@ -752,35 +786,34 @@ function AdminLoad() {
             role="img"
             aria-label={t("adminLoadChartAria")}
           >
-            <div className="flex min-w-[520px] gap-1 border-b border-violet-200 pb-1 pl-9 dark:border-white/15">
-              {data.registrations.map((r, i) => {
-                const call = data.calls[i];
-                const pctReg = maxCount > 0 ? (r.count / maxCount) * 100 : 0;
-                const pctCall = maxCount > 0 && call ? (call.count / maxCount) * 100 : 0;
+            <div className="flex min-w-[700px] gap-1 border-b border-violet-200 pb-1 pl-9 dark:border-white/15">
+              {points.map((p) => {
+                const pctReg = maxCount > 0 ? (p.registrations / maxCount) * 100 : 0;
+                const pctCall = maxCount > 0 ? (p.calls / maxCount) * 100 : 0;
                 return (
-                  <div key={r.hour} className="flex min-w-0 flex-1 flex-col">
+                  <div key={p.key} className="flex min-w-0 flex-1 flex-col">
                     <div className="flex h-48 justify-center gap-0.5 px-0.5">
                       <div
                         className="flex h-full w-1/2 min-w-[10px] flex-col justify-end"
-                        title={`${t("adminLoadRegistrations")}: ${r.count}`}
+                        title={`${t("adminLoadRegistrations")}: ${p.registrations}`}
                       >
                         <div
                           className="w-full rounded-t-md bg-gradient-to-t from-violet-600 to-violet-400 shadow-sm dark:from-violet-700 dark:to-violet-500"
-                          style={{ height: `${r.count > 0 ? Math.max(pctReg, 5) : 0}%` }}
+                          style={{ height: `${p.registrations > 0 ? Math.max(pctReg, 5) : 0}%` }}
                         />
                       </div>
                       <div
                         className="flex h-full w-1/2 min-w-[10px] flex-col justify-end"
-                        title={`${t("adminLoadCalls")}: ${call?.count ?? 0}`}
+                        title={`${t("adminLoadCalls")}: ${p.calls}`}
                       >
                         <div
                           className="w-full rounded-t-md bg-gradient-to-t from-emerald-600 to-emerald-400 shadow-sm dark:from-emerald-700 dark:to-emerald-500"
-                          style={{ height: `${call && call.count > 0 ? Math.max(pctCall, 5) : 0}%` }}
+                          style={{ height: `${p.calls > 0 ? Math.max(pctCall, 5) : 0}%` }}
                         />
                       </div>
                     </div>
                     <div className="mt-1.5 text-center text-[10px] font-black tabular-nums text-violet-600 dark:text-violet-400">
-                      {r.hour}:00
+                      {p.label}
                     </div>
                   </div>
                 );
@@ -1303,13 +1336,13 @@ function AdminVisitsExport() {
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.started_at)}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.finished_at)}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.queue_wait_minutes != null ? `${r.queue_wait_minutes} ${t("minShort")}` : "—"}
+                      {formatMinDisplay(r.queue_wait_minutes, t("minShort"))}
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.desk_service_minutes != null ? `${r.desk_service_minutes} ${t("minShort")}` : "—"}
+                      {formatMinDisplay(r.desk_service_minutes, t("minShort"))}
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.total_minutes != null ? `${r.total_minutes} ${t("minShort")}` : "—"}
+                      {formatMinDisplay(r.total_minutes, t("minShort"))}
                     </td>
                     <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
                       {String(r.student_last_name || "").trim()} {String(r.student_first_name || "").trim()}
@@ -1319,7 +1352,7 @@ function AdminVisitsExport() {
                       <div className="text-[11px]">{r.specialty || ""}</div>
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">
-                      {r.study_duration_years != null ? String(r.study_duration_years) : "—"}
+                      {formatStudyDuration(r.study_duration_years)}
                     </td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_name || "—"}</td>
                     <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{r.advisor_desk || "—"}</td>
@@ -1603,7 +1636,7 @@ type AdminSchoolsServedResponse = { from: string; to: string; rows: AdminSchools
 
 const TICKET_STATUSES = ["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"] as const;
 
-function AdminWaitStats() {
+export function AdminWaitStats() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
   const [to, setTo] = useState(() => localYmdToday());
@@ -1919,7 +1952,7 @@ function AdminWaitStats() {
                         <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.called_at)}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-violet-800 dark:text-violet-200">{formatLocalDateTime(r.started_at)}</td>
                         <td className="px-3 py-2.5 font-mono tabular-nums font-bold text-amber-700 dark:text-amber-300">
-                          {r.wait_minutes}
+                          {formatMinDisplay(r.wait_minutes, t("minShort"))}
                         </td>
                         <td className="px-3 py-2.5 text-violet-800 dark:text-violet-200">{ticketStatusLabel(r.status, t)}</td>
                         <td className="px-3 py-2.5 font-semibold text-violet-950 dark:text-white">
@@ -1941,9 +1974,11 @@ function AdminWaitStats() {
 
 function AdminQueuesBoard() {
   const { t } = useI18n();
+  const loc = useLocation();
   const [rows, setRows] = useState<AdminQueueRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -1966,14 +2001,22 @@ function AdminQueuesBoard() {
     void load();
   }, []);
 
+  const filteredRows = useMemo(() => {
+    if (!statusFilter.trim()) return rows;
+    const statusQ = statusFilter.trim().toUpperCase();
+    return rows.filter((r) => String(r.status || "").toUpperCase() === statusQ);
+  }, [rows, statusFilter]);
+
   return (
     <div className="space-y-6">
-      <NavLink
-        to="/admin/stats"
-        className="inline-flex items-center gap-2 text-sm font-extrabold text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-white"
-      >
-        ← {t("back")}
-      </NavLink>
+      {loc.pathname.startsWith("/admin/stats/") ? (
+        <NavLink
+          to="/admin/stats"
+          className="inline-flex items-center gap-2 text-sm font-extrabold text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-white"
+        >
+          ← {t("back")}
+        </NavLink>
+      ) : null}
       <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -1982,18 +2025,37 @@ function AdminQueuesBoard() {
               Общий список активных талонов (WAITING/CALLED/IN_SERVICE) и их текущий менеджер.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:bg-violet-500"
-          >
-            {t("refresh")}
-          </button>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex min-w-[180px] flex-col gap-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                {t("adminWaitFilterStatus")}
+              </span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
+                <option value="">{t("adminFilterAny")}</option>
+                {TICKET_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {ticketStatusLabel(s, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-black text-white shadow-md shadow-violet-600/25 transition hover:bg-violet-500"
+            >
+              {t("refresh")}
+            </button>
+          </div>
         </div>
         {err && <div className="mb-4 text-sm font-semibold text-rose-600">{err}</div>}
         {loading ? (
           <div className="py-12 text-center text-sm font-semibold text-violet-600 dark:text-violet-300">{t("loading")}</div>
-        ) : rows.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <div className="py-12 text-center text-sm text-violet-600 dark:text-violet-400">{t("adminWaitEmpty")}</div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-violet-100 dark:border-white/10">
@@ -2008,7 +2070,7 @@ function AdminQueuesBoard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-violet-100 dark:divide-white/10">
-                {rows.map((r) => (
+                {filteredRows.map((r) => (
                   <tr key={r.id} className="bg-white dark:bg-slate-950/50">
                     <td className="px-3 py-2.5 font-mono text-[11px] text-violet-800 dark:text-violet-200">{r.id}</td>
                     <td className="px-3 py-2.5 font-black tabular-nums text-violet-950 dark:text-white">{r.formatted_number}</td>
@@ -2018,7 +2080,7 @@ function AdminQueuesBoard() {
                     </td>
                     <td className="max-w-[340px] px-3 py-2.5 text-violet-800 dark:text-violet-200">
                       {r.school || "—"} · {r.language_section || "—"} · {r.course || "—"}
-                      {r.study_duration_years ? ` · ТиПО ${r.study_duration_years} г.` : ""}
+                      {r.study_duration_years != null ? ` · ${formatStudyDuration(r.study_duration_years)}` : ""}
                       <div className="mt-0.5 text-[11px] opacity-80">
                         {r.specialty || "—"} {r.specialty_code ? `(${r.specialty_code})` : ""}
                       </div>
@@ -2536,14 +2598,6 @@ function AdminStats() {
       linkTo: "/admin/stats/visits",
     },
     {
-      icon: Clock,
-      title: t("adminStatWait"),
-      desc: t("adminStatWaitDesc"),
-      metric: "—",
-      accent: "from-amber-500 to-orange-600",
-      linkTo: "/admin/stats/wait",
-    },
-    {
       icon: LineChart,
       title: t("adminStatSchools"),
       desc: t("adminStatSchoolsDesc"),
@@ -2632,6 +2686,7 @@ function AdminStats() {
 function AdminSettingsInner() {
   const { t, lang, setLang } = useI18n();
   const { adminUser } = useAdminContext();
+  const nav = useNavigate();
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
   const [nextPassword2, setNextPassword2] = useState("");
@@ -2701,6 +2756,17 @@ function AdminSettingsInner() {
             ))}
           </div>
           <p className="mt-2 text-[11px] font-medium text-violet-600 dark:text-violet-400">{t("langUiHint")}</p>
+        </div>
+        <div className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50/90 px-5 py-4">
+          <div className="mb-2 text-sm font-extrabold text-violet-950">Сотрудники</div>
+          <p className="mb-3 text-xs font-semibold text-violet-700">Управление менеджерами перенесено в отдельную страницу.</p>
+          <button
+            type="button"
+            onClick={() => nav("/admin/employees")}
+            className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-black text-white"
+          >
+            Открыть сотрудников
+          </button>
         </div>
         <form
           onSubmit={(e) => void submitAdminPassword(e)}
@@ -2803,7 +2869,7 @@ function AdminLayout() {
   }
 
   if (loc.pathname === "/admin" || loc.pathname === "/admin/") {
-    return <Navigate to="/admin/employees" replace />;
+    return <Navigate to="/admin/dashboard" replace />;
   }
 
   return (
@@ -2843,12 +2909,12 @@ export default function AdminApp() {
   return (
     <Routes>
       <Route path="/admin" element={<AdminLayout />}>
+        <Route path="dashboard" element={<AdminQueuesBoard />} />
         <Route path="employees" element={<AdminEmployees />} />
         <Route path="stats" element={<AdminStats />} />
         <Route path="stats/visits" element={<AdminVisitsExport />} />
         <Route path="stats/faq" element={<AdminFaqNoQueueStats />} />
         <Route path="stats/reviews" element={<AdminReviewsExport />} />
-        <Route path="stats/wait" element={<AdminWaitStats />} />
         <Route path="stats/queues" element={<AdminQueuesBoard />} />
         <Route path="stats/schools" element={<AdminSchoolsServedStats />} />
         <Route path="stats/bookings" element={<AdminBookingsStats />} />

@@ -9,6 +9,7 @@ import { SCHOOL_ENTRIES, schoolApiNameById, specialtiesForSchool } from "../scho
 import { availableSlotLabelsForToday, isoFromLocalTodayHM } from "../lib/bookingSlots";
 import { useI18n } from "../i18n";
 import { parseDeskWindowNumber } from "../lib/deskWindow";
+import { STUDY_DURATION_OPTIONS, parseStudyDuration } from "../lib/studyDuration";
 import SchemeImage from "../components/SchemeImage";
 import { parseBackendDateTime } from "../lib/backendDateTime";
 
@@ -20,6 +21,18 @@ type StudentForm = {
   languageSection: string;
   course: string;
   studyDurationYears: string;
+};
+
+const STUDENT_FORM_DRAFT_KEY = "uniq.student.form.v2";
+
+const EMPTY_STUDENT_FORM: StudentForm = {
+  firstName: "",
+  lastName: "",
+  schoolId: "",
+  specialtyCode: "",
+  languageSection: "",
+  course: "",
+  studyDurationYears: "",
 };
 
 function useLocalTicketId() {
@@ -68,15 +81,31 @@ export default function StudentPage() {
   const [missedReasonOpen, setMissedReasonOpen] = useState(false);
   const [missedReasonText, setMissedReasonText] = useState("");
 
-  const [form, setForm] = useState<StudentForm>({
-    firstName: "",
-    lastName: "",
-    schoolId: "",
-    specialtyCode: "",
-    languageSection: "",
-    course: "",
-    studyDurationYears: "",
-  });
+  const [form, setForm] = useState<StudentForm>(EMPTY_STUDENT_FORM);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(STUDENT_FORM_DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as Partial<StudentForm>;
+      setForm((p) => ({
+        ...p,
+        firstName: String(draft.firstName || ""),
+        lastName: String(draft.lastName || ""),
+        schoolId: String(draft.schoolId || ""),
+        specialtyCode: String(draft.specialtyCode || ""),
+        languageSection: String(draft.languageSection || ""),
+        course: String(draft.course || ""),
+        studyDurationYears: String(draft.studyDurationYears || ""),
+      }));
+    } catch {
+      // ignore invalid local draft
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STUDENT_FORM_DRAFT_KEY, JSON.stringify(form));
+  }, [form]);
 
   useEffect(() => {
     // Optional: hydrate student name from Microsoft session (if any).
@@ -113,6 +142,17 @@ export default function StudentPage() {
     return lineReg.matchesAny && lineReg.open;
   }, [lineReg, lineRegLoading]);
 
+  const isFormComplete = useMemo(() => {
+    if (!form.firstName.trim()) return false;
+    if (!form.lastName.trim()) return false;
+    if (!form.schoolId) return false;
+    if (!form.specialtyCode) return false;
+    if (!form.languageSection) return false;
+    if (!form.course) return false;
+    if (!form.studyDurationYears) return false;
+    return parseStudyDuration(form.studyDurationYears) != null;
+  }, [form]);
+
   useEffect(() => {
     const specs = specialtiesForSchool(schoolApi);
     if (specs.length === 0) {
@@ -145,7 +185,7 @@ export default function StudentPage() {
       setLineReg(null);
       return;
     }
-    if (!schoolApi || !form.course || !form.languageSection) {
+    if (!schoolApi || !form.course || !form.languageSection || !form.studyDurationYears) {
       setLineReg(null);
       return;
     }
@@ -332,7 +372,7 @@ export default function StudentPage() {
       specialtyCode: sp?.code ?? "",
       languageSection: form.languageSection,
       course: form.course,
-      studyDurationYears: Number(form.studyDurationYears),
+      studyDurationYears: parseStudyDuration(form.studyDurationYears),
     };
     if (preferredIso) body.preferredSlotAt = preferredIso;
     const res = await fetchJSON("/api/tickets", {
@@ -354,6 +394,7 @@ export default function StudentPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFormComplete) return;
     await postTicket();
   };
 
@@ -689,7 +730,6 @@ export default function StudentPage() {
               value={form.firstName}
               onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
               required
-              disabled={!canRegisterForm}
             />
             <input
               className="ui-input"
@@ -697,7 +737,6 @@ export default function StudentPage() {
               value={form.lastName}
               onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
               required
-              disabled={!canRegisterForm}
             />
             <select
               className="ui-input sm:col-span-2"
@@ -765,10 +804,13 @@ export default function StudentPage() {
               required
             >
               <option value="">{t("chooseStudyDuration")}</option>
-              <option value="2">ТиПО · 2 года обучения</option>
-              <option value="3">ТиПО · 3 года обучения</option>
+              {STUDY_DURATION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={String(opt.value)}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
-            <button type="submit" disabled={!canRegisterForm} className="ui-btn-primary mt-2 sm:col-span-2">
+            <button type="submit" disabled={!canRegisterForm || !isFormComplete} className="ui-btn-primary mt-2 sm:col-span-2">
               {t("getTicket")}
             </button>
           </form>
@@ -782,7 +824,7 @@ export default function StudentPage() {
             </Link>
             <button
               type="button"
-              disabled={!canRegisterForm}
+              disabled={!canRegisterForm || !isFormComplete}
               onClick={() => setBookingOpen(true)}
               className="rounded-xl border-2 border-indigo-200 bg-indigo-50 py-3.5 text-sm font-extrabold text-indigo-950 shadow-sm transition hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
             >

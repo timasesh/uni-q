@@ -13,6 +13,7 @@ import { hydrateManagerWorkedFromServer, syncManagerWorkTotalToServer } from "..
 import { formatAdvisorReceptionSummary } from "../lib/formatAdvisorReceptionSummary";
 import { parseBackendDateTime } from "../lib/backendDateTime";
 import { AppLogo } from "../lib/brand";
+import { formatStudyDuration } from "../lib/studyDuration";
 
 type Props = {
   managerDark: boolean;
@@ -89,6 +90,13 @@ function localYmd(d = new Date()) {
 
 function historyCommentWordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function formatMinDisplay(value: number | null | undefined, minShort: string): string {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  const n = Number(value);
+  const shown = n > 0 && n < 1 ? 1 : n;
+  return `${shown} ${minShort}`;
 }
 
 function HistoryCommentCell({ text, t }: { text: string; t: (k: string) => string }) {
@@ -659,7 +667,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                         </div>
                         <div className="text-xs font-medium text-violet-800/90 dark:text-sky-300">
                           {tk.specialty || ""} {tk.specialty_code ? `(${tk.specialty_code})` : ""}
-                          {tk.study_duration_years ? ` · ТиПО ${tk.study_duration_years} г.` : ""}
+                          {tk.study_duration_years != null ? ` · ${formatStudyDuration(tk.study_duration_years)}` : ""}
                         </div>
                         {slot && (
                           <div className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
@@ -1009,17 +1017,17 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                           {r.language_section || ""} · {r.course || ""}
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
-                          {r.study_duration_years != null ? `ТиПО ${r.study_duration_years} г.` : "—"}
+                          {formatStudyDuration(r.study_duration_years)}
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">{timeHHMM(r.started_at)}</td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
-                          {r.queue_wait_minutes != null ? `${r.queue_wait_minutes} ${t("minShort")}` : "—"}
+                          {formatMinDisplay(r.queue_wait_minutes, t("minShort"))}
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
-                          {r.desk_service_minutes != null ? `${r.desk_service_minutes} ${t("minShort")}` : "—"}
+                          {formatMinDisplay(r.desk_service_minutes, t("minShort"))}
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
-                          {r.total_minutes != null ? `${r.total_minutes} ${t("minShort")}` : "—"}
+                          {formatMinDisplay(r.total_minutes, t("minShort"))}
                         </td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">{r.advisor_name || "—"}</td>
                         <td className="px-3 py-3 text-blue-900 dark:text-sky-200">
