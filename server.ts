@@ -1268,12 +1268,14 @@ function detectIntent(text: string): ChatIntent {
   const s = normalizeKbText(text);
   if (!s) return "other";
   if (/(военн|кафедр|әскери|military)/iu.test(s)) return "military";
+  if (/(финанс|оплат|договор|tuition|fee|долг по оплат|задолженност.*оплат)/iu.test(s)) return "payment";
+  if (/(platonus|moodle|outlook|teams|парол|логин|доступ|it)/iu.test(s)) return "it_access";
+  if (/(академическ.*задолж|fx\b|f\b)/iu.test(s)) return "retake";
   if (/(gpa|оценк|баға|транскрипт|успеваем)/iu.test(s)) return "grades";
-  if (/(ретейк|пересдач|fx\b|f\b|академ.*разниц)/iu.test(s)) return "retake";
+  if (/(ретейк|пересдач|академ.*разниц)/iu.test(s)) return "retake";
   if (/(регистрац|запис|иуп|план дисциплин)/iu.test(s)) return "registration";
   if (/(расписан|экзамен|сесси)/iu.test(s)) return "schedule";
-  if (/(platonus|moodle|outlook|teams|парол|логин|доступ|it)/iu.test(s)) return "it_access";
-  if (/(оплат|договор|долг|задолжен|fee|tuition)/iu.test(s)) return "payment";
+  if (/(долг|задолжен)/iu.test(s)) return "payment";
   if (/(стипенд|шәкіртақ)/iu.test(s)) return "scholarship";
   if (/(общежит|жатақхана|dorm)/iu.test(s)) return "hostel";
   if (/(справк|заявлен|документ|құжат|certificate)/iu.test(s)) return "documents";
@@ -1310,11 +1312,24 @@ function rankKbByQueries(
     const userNorm = normalizeKbText(q);
     const userTokens = tokenizeKbText(q);
     const wantsLocation = isLocationCabinetQuery(q);
+    const queryIntent = detectIntent(q);
+    const asksSystemAccess = /(platonus|moodle|outlook|teams|доступ|логин|парол|it)/iu.test(q);
     if (!userNorm || userTokens.size === 0) continue;
     for (const e of entries) {
       const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
       const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
       let score = questionScore + answerScore * 0.6 + (feedbackBoost.get(e.qNorm) || 0);
+      const entryIntent = detectIntent(`${e.qNorm} ${e.aNorm}`);
+      if (queryIntent !== "other" && entryIntent !== "other") {
+        if (queryIntent === entryIntent) score += 2.1;
+        else score -= 2.7;
+      }
+      if ((queryIntent === "it_access" || queryIntent === "payment") && (entryIntent === "grades" || entryIntent === "retake")) {
+        score -= 2.4;
+      }
+      if (asksSystemAccess && /(gpa|fx|f\b|средн.*бал|успеваем)/iu.test(`${e.qNorm} ${e.aNorm}`)) {
+        score -= 2.2;
+      }
       if (wantsLocation && answerHasCabinetInfo(e.answer)) score += 2.2;
       if (wantsLocation && /it|поддержк|platonus|moodle|outlook|teams/iu.test(e.qNorm + " " + e.aNorm)) score += 1.1;
       if (continuity?.category && e.category === continuity.category) score += continuity?.topicLock ? 1.6 : 0.9;

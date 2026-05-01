@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, MessageCircle, Send, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import { cn } from "../lib/cn";
@@ -17,6 +17,31 @@ type Msg = {
 };
 const CHAT_HISTORY_KEY = "uniq.student.chat.history.v1";
 const CHAT_DEBUG_KEY = "uniq.student.chat.debug.v1";
+
+function normalizeBotText(input: string): string {
+  let t = String(input || "").replace(/\r\n/g, "\n").trim();
+  // If model returned markdown blocks inline, force visual structure.
+  t = t.replace(/\s+(#{2,6}\s+)/g, "\n\n$1");
+  t = t.replace(/\s+(\d+\.\s+\*\*[^*]+\*\*)/g, "\n$1");
+  t = t.replace(/\s+(-\s+)/g, "\n$1");
+  t = t.replace(/\s{2,}/g, " ");
+  t = t.replace(/\n{3,}/g, "\n\n");
+  return t;
+}
+
+function renderInlineBold(text: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) => {
+    if (/^\*\*[^*]+\*\*$/.test(p)) {
+      return (
+        <strong key={`b-${i}`} className="font-black">
+          {p.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={`t-${i}`}>{p}</span>;
+  });
+}
 
 export default function ChatWidget() {
   const { t, lang } = useI18n();
@@ -274,7 +299,19 @@ export default function ChatWidget() {
                     : "self-end rounded-br-md bg-teal-600 text-white"
                 )}
               >
-                <div>{msg.text}</div>
+                {msg.role === "bot" ? (
+                  <div className="whitespace-pre-wrap break-words">
+                    {normalizeBotText(msg.text)
+                      .split("\n")
+                      .map((line, i) => (
+                        <div key={`ln-${msg.id}-${i}`} className={i === 0 ? "" : "mt-1"}>
+                          {renderInlineBold(line)}
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">{msg.text}</div>
+                )}
                 {msg.role === "bot" ? (
                   <div className="mt-2 flex items-center gap-2">
                     <button
