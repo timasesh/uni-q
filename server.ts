@@ -984,6 +984,17 @@ function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   return scored;
 }
 
+function findKbExact(userQuestion: string): ChatKbEntry | null {
+  const entries = loadChatKb();
+  if (entries.length === 0) return null;
+  const userNorm = normalizeKbText(userQuestion);
+  if (!userNorm) return null;
+  const exact = entries.find((e) => e.qNorm === userNorm);
+  if (exact) return exact;
+  const contains = entries.find((e) => userNorm.includes(e.qNorm) || e.qNorm.includes(userNorm));
+  return contains || null;
+}
+
 app.post("/api/student/chat", async (req, res) => {
   if (!UNIQ_NVIDIA_API_KEY) {
     return res.status(503).json({ error: "chat_unavailable" });
@@ -1005,6 +1016,13 @@ app.post("/api/student/chat", async (req, res) => {
     return res.status(400).json({ error: "chat_invalid" });
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
+  const exactKb = findKbExact(lastUserQuestion);
+  if (exactKb) {
+    return res.json({
+      reply: `[${exactKb.category}] ${exactKb.answer}`.trim(),
+      source: "local_kb_exact",
+    });
+  }
   const kbMatches = findKbMatches(lastUserQuestion, UNIQ_CHAT_KB_MAX_MATCHES);
   const kbContext =
     kbMatches.length > 0
