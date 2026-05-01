@@ -1203,7 +1203,17 @@ function buildRetrievalQueries(cleaned: { role: "user" | "assistant"; content: s
   return Array.from(new Set(queries));
 }
 
-function rankKbByQueries(queries: string[]): { entry: ChatKbEntry; score: number; questionScore: number; qOverlap: number; aOverlap: number }[] {
+function isFollowupUserQuestion(text: string): boolean {
+  const s = String(text || "").trim();
+  if (!s) return false;
+  const tok = tokenizeKbText(s).size;
+  return tok <= 4 || /^(а|нет|то есть|т е|и|или|но|тогда|если|еще|ещ[её]|как это|что дальше|куда|где|когда)\b/iu.test(s);
+}
+
+function rankKbByQueries(
+  queries: string[],
+  continuity?: { category?: string; questionNorm?: string | null }
+): { entry: ChatKbEntry; score: number; questionScore: number; qOverlap: number; aOverlap: number }[] {
   const entries = loadChatKb();
   if (entries.length === 0 || queries.length === 0) return [];
   const feedbackBoost = getChatFeedbackBoostMap();
@@ -1216,7 +1226,9 @@ function rankKbByQueries(queries: string[]): { entry: ChatKbEntry; score: number
     for (const e of entries) {
       const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
       const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
-      const score = questionScore + answerScore * 0.6 + (feedbackBoost.get(e.qNorm) || 0);
+      let score = questionScore + answerScore * 0.6 + (feedbackBoost.get(e.qNorm) || 0);
+      if (continuity?.category && e.category === continuity.category) score += 0.9;
+      if (continuity?.questionNorm && e.qNorm === continuity.questionNorm) score += 0.4;
       const qOverlap = tokenOverlapCount(userTokens, e.qTokens);
       const aOverlap = tokenOverlapCount(userTokens, e.aTokens);
       const prev = byEntry.get(e);
@@ -1237,21 +1249,32 @@ app.post("/api/student/chat", async (req, res) => {
   if (!Array.isArray(raw.messages) || raw.messages.length === 0) {
     return res.status(400).json({ error: "chat_invalid" });
   }
-  const cleaned: { role: "user" | "assistant"; content: string }[] = [];
+  const cleaned: { role: "user" | "assistant"; content: string; source?: string; kbQuestionNorm?: string }[] = [];
   for (const m of raw.messages.slice(-24)) {
     if (!m || typeof m !== "object") continue;
     const role = String((m as any).role || "").toLowerCase();
     const content = String((m as any).content ?? "").trim();
     if (!content || content.length > 6000) continue;
     if (role !== "user" && role !== "assistant") continue;
-    cleaned.push({ role, content });
+    const source = String((m as any).source || "").trim();
+    const kbQuestionNorm = String((m as any).kbQuestionNorm || "").trim();
+    cleaned.push({ role, content, source: source || undefined, kbQuestionNorm: kbQuestionNorm || undefined });
   }
   if (cleaned.length === 0 || cleaned[cleaned.length - 1]!.role !== "user") {
     return res.status(400).json({ error: "chat_invalid" });
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
+  const linkedAssistant = [...cleaned]
+    .reverse()
+    .find((m) => m.role === "assistant" && m.source === "local_kb_best" && m.kbQuestionNorm);
+  const linkedKbEntry = linkedAssistant
+    ? loadChatKb().find((e) => e.qNorm === String(linkedAssistant.kbQuestionNorm || ""))
+    : null;
   const retrievalQueries = buildRetrievalQueries(cleaned);
-  const ranked = rankKbByQueries(retrievalQueries);
+  const ranked = rankKbByQueries(retrievalQueries, {
+    category: isFollowupUserQuestion(lastUserQuestion) ? linkedKbEntry?.category : undefined,
+    questionNorm: linkedKbEntry?.qNorm || null,
+  });
   const bestKb = ranked[0] ?? null;
   const secondKb = ranked[1] ?? null;
   // Direct KB reply only when confidence is strong by question semantics (avoid wrong answer by one shared word).
@@ -1276,12 +1299,16 @@ app.post("/api/student/chat", async (req, res) => {
           .map((m, i) => `${i + 1}. category=${m.category}\nquestion=${m.question}\nanswer=${m.answer}`)
           .join("\n\n")}`
       : "LOCAL_KB_MATCHES: none";
+  const dialogKbContext = linkedKbEntry
+    ? `DIALOG_CONTEXT_FROM_PREVIOUS_MATCH:\ncategory=${linkedKbEntry.category}\nquestion=${linkedKbEntry.question}\nanswer=${linkedKbEntry.answer}`
+    : "DIALOG_CONTEXT_FROM_PREVIOUS_MATCH: none";
 
   const payload = {
     model: UNIQ_NVIDIA_CHAT_MODEL,
     messages: [
       { role: "system", content: STUDENT_CHAT_SYSTEM },
       { role: "system", content: kbContext },
+      { role: "system", content: dialogKbContext },
       ...cleaned,
     ],
     max_tokens: 1024,

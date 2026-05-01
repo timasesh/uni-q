@@ -126,9 +126,14 @@ export default function ChatWidget() {
     setMessages((m) => [...m, userMsg]);
     setSending(true);
 
-    const openAi: { role: "user" | "assistant"; content: string }[] = [...messages, userMsg].map((m) => ({
+    const openAi: { role: "user" | "assistant"; content: string; source?: string; kbQuestionNorm?: string }[] = [
+      ...messages,
+      userMsg,
+    ].map((m) => ({
       role: m.role === "user" ? ("user" as const) : ("assistant" as const),
       content: m.text,
+      source: m.source ?? undefined,
+      kbQuestionNorm: m.kbQuestionNorm ?? undefined,
     }));
     while (openAi.length > 0 && openAi[0]!.role === "assistant") {
       openAi.shift();
