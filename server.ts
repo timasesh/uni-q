@@ -219,6 +219,17 @@ CREATE TABLE IF NOT EXISTS stats_events (
   meta TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS chat_feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  user_question TEXT,
+  user_question_norm TEXT,
+  answer_text TEXT,
+  kb_question_norm TEXT,
+  source TEXT,
+  helpful INTEGER NOT NULL
+);
 `);
 
 function migrateDb() {
@@ -291,6 +302,18 @@ function migrateDb() {
       case_type TEXT,
       is_repeat INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      user_question TEXT,
+      user_question_norm TEXT,
+      answer_text TEXT,
+      kb_question_norm TEXT,
+      source TEXT,
+      helpful INTEGER NOT NULL
     );
   `);
   const visitLogCount = db.prepare("SELECT COUNT(*) as c FROM ticket_visit_log").get() as { c: number };
@@ -942,6 +965,7 @@ type ChatKbEntry = {
   aTrigrams: Set<string>;
 };
 let chatKbCache: { mtimeMs: number; entries: ChatKbEntry[] } | null = null;
+let chatFeedbackBoostCache: { atMs: number; byQuestionNorm: Map<string, number> } | null = null;
 const KB_RU_STOPWORDS = new Set([
   "как",
   "что",
@@ -1108,6 +1132,34 @@ function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEnt
   return questionScore + answerScore * 0.6;
 }
 
+function getChatFeedbackBoostMap(): Map<string, number> {
+  const now = Date.now();
+  if (chatFeedbackBoostCache && now - chatFeedbackBoostCache.atMs < 30_000) {
+    return chatFeedbackBoostCache.byQuestionNorm;
+  }
+  const rows = db
+    .prepare(
+      `SELECT kb_question_norm,
+              SUM(CASE WHEN helpful = 1 THEN 1 ELSE 0 END) AS up_count,
+              SUM(CASE WHEN helpful = -1 THEN 1 ELSE 0 END) AS down_count
+       FROM chat_feedback
+       WHERE kb_question_norm IS NOT NULL AND TRIM(kb_question_norm) <> ''
+       GROUP BY kb_question_norm`
+    )
+    .all() as { kb_question_norm: string; up_count: number; down_count: number }[];
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const up = Number(r.up_count) || 0;
+    const down = Number(r.down_count) || 0;
+    const net = up - down;
+    // Saturating boost/penalty to avoid instability.
+    const boost = Math.max(-2.5, Math.min(2.5, net * 0.35));
+    map.set(String(r.kb_question_norm || "").trim(), boost);
+  }
+  chatFeedbackBoostCache = { atMs: now, byQuestionNorm: map };
+  return map;
+}
+
 function tokenOverlapCount(a: Set<string>, b: Set<string>): number {
   let n = 0;
   for (const t of a) if (b.has(t)) n += 1;
@@ -1129,36 +1181,52 @@ function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   return scored;
 }
 
-function findKbBest(userQuestion: string): {
-  entry: ChatKbEntry;
-  score: number;
-  questionScore: number;
-  answerScore: number;
-  qOverlap: number;
-  aOverlap: number;
-} | null {
-  const entries = loadChatKb();
-  if (entries.length === 0) return null;
-  const userNorm = normalizeKbText(userQuestion);
-  const userTokens = tokenizeKbText(userQuestion);
-  if (!userNorm || userTokens.size === 0) return null;
-  let best: {
-    entry: ChatKbEntry;
-    score: number;
-    questionScore: number;
-    answerScore: number;
-    qOverlap: number;
-    aOverlap: number;
-  } | null = null;
-  for (const e of entries) {
-    const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
-    const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
-    const score = questionScore + answerScore * 0.6;
-    const qOverlap = tokenOverlapCount(userTokens, e.qTokens);
-    const aOverlap = tokenOverlapCount(userTokens, e.aTokens);
-    if (!best || score > best.score) best = { entry: e, score, questionScore, answerScore, qOverlap, aOverlap };
+function getLastUserMessages(cleaned: { role: "user" | "assistant"; content: string }[], n = 2): string[] {
+  const users = cleaned.filter((m) => m.role === "user").map((m) => m.content.trim()).filter(Boolean);
+  return users.slice(-n);
+}
+
+function buildRetrievalQueries(cleaned: { role: "user" | "assistant"; content: string }[]): string[] {
+  const users = getLastUserMessages(cleaned, 2);
+  if (users.length === 0) return [];
+  const last = users[users.length - 1]!;
+  const queries = [last];
+
+  // If latest message is short/elliptic, combine with previous user turn for context.
+  const shortOrFollowup =
+    tokenizeKbText(last).size <= 4 ||
+    /^(нет|а|или|и|но|тогда|если|ещ[её]|что\s+для\s+этого|как\s+это|что\s+делать)\b/iu.test(last);
+  if (shortOrFollowup && users.length >= 2) {
+    const prev = users[users.length - 2]!;
+    queries.push(`${prev}. ${last}`);
   }
-  return best;
+  return Array.from(new Set(queries));
+}
+
+function rankKbByQueries(queries: string[]): { entry: ChatKbEntry; score: number; questionScore: number; qOverlap: number; aOverlap: number }[] {
+  const entries = loadChatKb();
+  if (entries.length === 0 || queries.length === 0) return [];
+  const feedbackBoost = getChatFeedbackBoostMap();
+  const byEntry = new Map<ChatKbEntry, { score: number; questionScore: number; qOverlap: number; aOverlap: number }>();
+
+  for (const q of queries) {
+    const userNorm = normalizeKbText(q);
+    const userTokens = tokenizeKbText(q);
+    if (!userNorm || userTokens.size === 0) continue;
+    for (const e of entries) {
+      const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
+      const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
+      const score = questionScore + answerScore * 0.6 + (feedbackBoost.get(e.qNorm) || 0);
+      const qOverlap = tokenOverlapCount(userTokens, e.qTokens);
+      const aOverlap = tokenOverlapCount(userTokens, e.aTokens);
+      const prev = byEntry.get(e);
+      if (!prev || score > prev.score) byEntry.set(e, { score, questionScore, qOverlap, aOverlap });
+    }
+  }
+
+  return Array.from(byEntry.entries())
+    .map(([entry, m]) => ({ entry, ...m }))
+    .sort((a, b) => b.score - a.score);
 }
 
 app.post("/api/student/chat", async (req, res) => {
@@ -1182,18 +1250,26 @@ app.post("/api/student/chat", async (req, res) => {
     return res.status(400).json({ error: "chat_invalid" });
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
-  const bestKb = findKbBest(lastUserQuestion);
+  const retrievalQueries = buildRetrievalQueries(cleaned);
+  const ranked = rankKbByQueries(retrievalQueries);
+  const bestKb = ranked[0] ?? null;
+  const secondKb = ranked[1] ?? null;
   // Direct KB reply only when confidence is strong by question semantics (avoid wrong answer by one shared word).
   const canReplyDirectKb =
     !!bestKb &&
-    (bestKb.questionScore >= 8.0 || (bestKb.score >= 8.8 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.4 && bestKb.aOverlap >= 3));
+    (bestKb.questionScore >= 8.0 || (bestKb.score >= 8.8 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.4 && bestKb.aOverlap >= 3)) &&
+    (!secondKb || bestKb.score - secondKb.score >= 0.9);
   if (canReplyDirectKb && bestKb) {
     return res.json({
       reply: bestKb.entry.answer.trim(),
       source: "local_kb_best",
+      kbQuestionNorm: bestKb.entry.qNorm,
     });
   }
-  const kbMatches = findKbMatches(lastUserQuestion, UNIQ_CHAT_KB_MAX_MATCHES);
+  const kbMatches =
+    ranked.length > 0
+      ? ranked.slice(0, UNIQ_CHAT_KB_MAX_MATCHES).map((x) => x.entry)
+      : findKbMatches(lastUserQuestion, UNIQ_CHAT_KB_MAX_MATCHES);
   const kbContext =
     kbMatches.length > 0
       ? `LOCAL_KB_MATCHES:\n${kbMatches
@@ -1238,11 +1314,41 @@ app.post("/api/student/chat", async (req, res) => {
     if (typeof reply !== "string" || !reply.trim()) {
       return res.status(502).json({ error: "chat_upstream" });
     }
-    res.json({ reply: reply.trim() });
+    res.json({ reply: reply.trim(), source: "nvidia", kbQuestionNorm: bestKb?.entry?.qNorm || null });
   } catch (e) {
     console.warn("[student/chat] fetch failed", e);
     return res.status(502).json({ error: "chat_upstream" });
   }
+});
+
+app.post("/api/student/chat/feedback", (req, res) => {
+  const raw = (req.body || {}) as {
+    userQuestion?: unknown;
+    answer?: unknown;
+    source?: unknown;
+    kbQuestionNorm?: unknown;
+    helpful?: unknown;
+  };
+  const helpfulRaw = Number(raw.helpful);
+  const helpful = helpfulRaw === 1 ? 1 : helpfulRaw === -1 ? -1 : 0;
+  if (!helpful) return res.status(400).json({ error: "feedback_invalid" });
+  const userQuestion = String(raw.userQuestion ?? "").trim().slice(0, 6000);
+  const answer = String(raw.answer ?? "").trim().slice(0, 12000);
+  const source = String(raw.source ?? "").trim().slice(0, 120);
+  const kbQuestionNorm = String(raw.kbQuestionNorm ?? "").trim().slice(0, 600);
+  db.prepare(
+    `INSERT INTO chat_feedback (user_question, user_question_norm, answer_text, kb_question_norm, source, helpful)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    userQuestion || null,
+    userQuestion ? normalizeKbText(userQuestion) : null,
+    answer || null,
+    kbQuestionNorm || null,
+    source || null,
+    helpful
+  );
+  chatFeedbackBoostCache = null;
+  res.json({ ok: true });
 });
 
 function base64UrlDecodeToString(input: string): string {

@@ -5,7 +5,15 @@ import { cn } from "../lib/cn";
 import { AppLogo } from "../lib/brand";
 import { fetchJSON, readJSON } from "../api";
 
-type Msg = { id: string; role: "bot" | "user"; text: string };
+type Msg = {
+  id: string;
+  role: "bot" | "user";
+  text: string;
+  source?: string | null;
+  kbQuestionNorm?: string | null;
+  userQuestion?: string | null;
+  feedback?: -1 | 0 | 1;
+};
 const CHAT_HISTORY_KEY = "uniq.student.chat.history.v1";
 
 export default function ChatWidget() {
@@ -26,7 +34,15 @@ export default function ChatWidget() {
       const normalized = parsed
         .filter((m) => m && (m.role === "user" || m.role === "bot") && typeof m.text === "string")
         .slice(-80)
-        .map((m, i) => ({ id: m.id || `h-${Date.now()}-${i}`, role: m.role, text: m.text }));
+        .map((m, i) => ({
+          id: m.id || `h-${Date.now()}-${i}`,
+          role: m.role,
+          text: m.text,
+          source: typeof m.source === "string" ? m.source : null,
+          kbQuestionNorm: typeof m.kbQuestionNorm === "string" ? m.kbQuestionNorm : null,
+          userQuestion: typeof m.userQuestion === "string" ? m.userQuestion : null,
+          feedback: (m.feedback === 1 || m.feedback === -1 ? m.feedback : 0) as -1 | 0 | 1,
+        }));
       if (normalized.length > 0) setMessages(normalized);
     } catch {
       // ignore invalid local storage payload
@@ -62,8 +78,44 @@ export default function ChatWidget() {
     );
   }, [open, lang, t]);
 
-  const pushBot = (text: string) => {
-    setMessages((m) => [...m, { id: `${Date.now()}-b`, role: "bot", text }]);
+  const pushBot = (
+    text: string,
+    meta?: { source?: string | null; kbQuestionNorm?: string | null; userQuestion?: string | null }
+  ) => {
+    setMessages((m) => [
+      ...m,
+      {
+        id: `${Date.now()}-b`,
+        role: "bot",
+        text,
+        source: meta?.source ?? null,
+        kbQuestionNorm: meta?.kbQuestionNorm ?? null,
+        userQuestion: meta?.userQuestion ?? null,
+        feedback: 0,
+      },
+    ]);
+  };
+
+  const sendFeedback = async (msgId: string, helpful: -1 | 1) => {
+    const msg = messages.find((m) => m.id === msgId && m.role === "bot");
+    if (!msg) return;
+    if (msg.feedback === helpful) return;
+    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, feedback: helpful } : m)));
+    try {
+      await fetchJSON("/api/student/chat/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userQuestion: msg.userQuestion || "",
+          answer: msg.text,
+          source: msg.source || "",
+          kbQuestionNorm: msg.kbQuestionNorm || "",
+          helpful,
+        }),
+      });
+    } catch {
+      // best-effort learning signal
+    }
   };
 
   const send = async () => {
@@ -89,9 +141,11 @@ export default function ChatWidget() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages }),
       });
-      const js = (await readJSON<{ reply?: string; error?: string }>(res).catch(() => ({}))) as {
+      const js = (await readJSON<{ reply?: string; error?: string; source?: string; kbQuestionNorm?: string | null }>(res).catch(() => ({}))) as {
         reply?: string;
         error?: string;
+        source?: string;
+        kbQuestionNorm?: string | null;
       };
       if (!res.ok) {
         const code = js.error;
@@ -105,7 +159,11 @@ export default function ChatWidget() {
         pushBot(t("chatWidgetErrorUpstream"));
         return;
       }
-      pushBot(reply);
+      pushBot(reply, {
+        source: js.source || null,
+        kbQuestionNorm: js.kbQuestionNorm ?? null,
+        userQuestion: text,
+      });
     } catch {
       pushBot(t("chatWidgetErrorUpstream"));
     } finally {
@@ -168,7 +226,37 @@ export default function ChatWidget() {
                     : "self-end rounded-br-md bg-teal-600 text-white"
                 )}
               >
-                {msg.text}
+                <div>{msg.text}</div>
+                {msg.role === "bot" ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void sendFeedback(msg.id, 1)}
+                      className={cn(
+                        "rounded-md px-2 py-1 text-xs font-extrabold transition",
+                        msg.feedback === 1
+                          ? "bg-emerald-500 text-white"
+                          : "bg-violet-100 text-violet-900 hover:bg-violet-200 dark:bg-white/10 dark:text-sky-100 dark:hover:bg-white/20"
+                      )}
+                      title="Полезный ответ"
+                    >
+                      👍
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void sendFeedback(msg.id, -1)}
+                      className={cn(
+                        "rounded-md px-2 py-1 text-xs font-extrabold transition",
+                        msg.feedback === -1
+                          ? "bg-rose-500 text-white"
+                          : "bg-violet-100 text-violet-900 hover:bg-violet-200 dark:bg-white/10 dark:text-sky-100 dark:hover:bg-white/20"
+                      )}
+                      title="Неполезный ответ"
+                    >
+                      👎
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
             {sending ? (
