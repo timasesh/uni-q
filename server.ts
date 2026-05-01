@@ -9,6 +9,7 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import fs from "fs";
+import * as XLSX from "xlsx";
 import {
   fireVisitLogInsertPg,
   initPgHistoryPool,
@@ -880,10 +881,102 @@ app.post("/api/registration/check", (req, res) => {
 const UNIQ_NVIDIA_API_KEY = String(process.env.UNIQ_NVIDIA_API_KEY || "").trim();
 const UNIQ_NVIDIA_CHAT_MODEL = String(process.env.UNIQ_NVIDIA_CHAT_MODEL || "nvidia/nvidia-nemotron-nano-9b-v2").trim();
 const UNIQ_NVIDIA_API_BASE = String(process.env.UNIQ_NVIDIA_API_BASE || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "");
+const UNIQ_CHAT_KB_XLSX_PATH = String(process.env.UNIQ_CHAT_KB_XLSX_PATH || path.join(process.cwd(), "chat_bot", "1300_вопросов_от_студентов_для_базы_данных.xlsx")).trim();
+const UNIQ_CHAT_KB_MAX_MATCHES = Math.min(8, Math.max(1, Number(process.env.UNIQ_CHAT_KB_MAX_MATCHES || 5)));
 const STUDENT_CHAT_SYSTEM = `You are a helpful assistant for the uni-q electronic queue at a university consultation center.
 Answer questions about getting a queue ticket, booking a time slot, waiting, cancellation, and general orientation.
+You also have a local university knowledge base (Excel) with official answers not available on the public internet.
+When relevant matches are provided, prioritize them and answer in official style.
+Do not invent policies not present in the matched KB rows.
+If no relevant KB match is available, clearly say the information is not found in the local base and recommend contacting the consultation center.
 Be concise and accurate. If a question needs personal records, official documents, or account-specific actions, say the student should speak with staff at the desk or use the live queue.
 Reply in the same language as the user's last message when it is clearly Russian, Kazakh, or English; otherwise default to Russian.`;
+
+type ChatKbEntry = {
+  category: string;
+  question: string;
+  answer: string;
+  qNorm: string;
+  qTokens: Set<string>;
+};
+let chatKbCache: { mtimeMs: number; entries: ChatKbEntry[] } | null = null;
+
+function normalizeKbText(v: string): string {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeKbText(v: string): Set<string> {
+  const tokens = normalizeKbText(v)
+    .split(" ")
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 3);
+  return new Set(tokens);
+}
+
+function loadChatKb(): ChatKbEntry[] {
+  const p = UNIQ_CHAT_KB_XLSX_PATH;
+  if (!p || !fs.existsSync(p)) return [];
+  const st = fs.statSync(p);
+  if (chatKbCache && chatKbCache.mtimeMs === st.mtimeMs) return chatKbCache.entries;
+
+  const wb = XLSX.readFile(p);
+  const firstSheet = wb.SheetNames[0];
+  if (!firstSheet) return [];
+  const ws = wb.Sheets[firstSheet];
+  if (!ws) return [];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
+  const out: ChatKbEntry[] = [];
+  let currentCategory = "";
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i] || [];
+    const categoryCell = String(row[0] || "").trim();
+    if (categoryCell) currentCategory = categoryCell;
+    const question = String(row[1] || "").trim();
+    const answer = String(row[2] || "").trim();
+    if (!question || !answer) continue;
+    const qNorm = normalizeKbText(question);
+    const qTokens = tokenizeKbText(question);
+    if (!qNorm || qTokens.size === 0) continue;
+    out.push({ category: currentCategory || "Прочее", question, answer, qNorm, qTokens });
+  }
+  chatKbCache = { mtimeMs: st.mtimeMs, entries: out };
+  console.log(`[student/chat] KB loaded: ${out.length} rows from ${p}`);
+  return out;
+}
+
+function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEntry): number {
+  let s = 0;
+  if (userNorm.includes(item.qNorm)) s += 8;
+  if (item.qNorm.includes(userNorm) && userNorm.length >= 7) s += 6;
+  let overlap = 0;
+  for (const t of userTokens) {
+    if (item.qTokens.has(t)) overlap += 1;
+  }
+  s += overlap * 1.7;
+  const denom = Math.max(userTokens.size, item.qTokens.size, 1);
+  s += (overlap / denom) * 4;
+  return s;
+}
+
+function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
+  const entries = loadChatKb();
+  if (entries.length === 0) return [];
+  const userNorm = normalizeKbText(userQuestion);
+  const userTokens = tokenizeKbText(userQuestion);
+  if (!userNorm || userTokens.size === 0) return [];
+  const scored = entries
+    .map((e) => ({ e, score: scoreKbEntry(userNorm, userTokens, e) }))
+    .filter((x) => x.score >= 1.5)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.e);
+  return scored;
+}
 
 app.post("/api/student/chat", async (req, res) => {
   if (!UNIQ_NVIDIA_API_KEY) {
@@ -905,10 +998,22 @@ app.post("/api/student/chat", async (req, res) => {
   if (cleaned.length === 0 || cleaned[cleaned.length - 1]!.role !== "user") {
     return res.status(400).json({ error: "chat_invalid" });
   }
+  const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
+  const kbMatches = findKbMatches(lastUserQuestion, UNIQ_CHAT_KB_MAX_MATCHES);
+  const kbContext =
+    kbMatches.length > 0
+      ? `LOCAL_KB_MATCHES:\n${kbMatches
+          .map((m, i) => `${i + 1}. category=${m.category}\nquestion=${m.question}\nanswer=${m.answer}`)
+          .join("\n\n")}`
+      : "LOCAL_KB_MATCHES: none";
 
   const payload = {
     model: UNIQ_NVIDIA_CHAT_MODEL,
-    messages: [{ role: "system", content: STUDENT_CHAT_SYSTEM }, ...cleaned],
+    messages: [
+      { role: "system", content: STUDENT_CHAT_SYSTEM },
+      { role: "system", content: kbContext },
+      ...cleaned,
+    ],
     max_tokens: 1024,
     temperature: 0.6,
     stream: false,
