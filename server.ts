@@ -1026,7 +1026,7 @@ function tokenizeKbText(v: string): Set<string> {
   const tokens = normalizeKbText(v)
     .split(" ")
     .map((x) => x.trim())
-    .filter((x) => x.length >= 3 && !KB_RU_STOPWORDS.has(x));
+    .filter((x) => (x.length >= 3 || x === "it") && !KB_RU_STOPWORDS.has(x));
   return new Set(tokens);
 }
 
@@ -1124,6 +1124,19 @@ function scoreTextAgainst(
     s += dice * 8;
   }
   return s;
+}
+
+function isLocationCabinetQuery(text: string): boolean {
+  const s = normalizeKbText(text);
+  return /(где|кабинет|кабинете|адрес|расположен|находится|где находится|where|office|room)/iu.test(s);
+}
+
+function answerHasCabinetInfo(answer: string): boolean {
+  const s = normalizeKbText(answer);
+  if (!s) return false;
+  if (/кабинет\s*\d+/iu.test(s)) return true;
+  if (/каб\.\s*\d+/iu.test(s)) return true;
+  return /кабинет/iu.test(s) && /\d{2,4}/.test(s);
 }
 
 function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEntry): number {
@@ -1296,11 +1309,14 @@ function rankKbByQueries(
   for (const q of queries) {
     const userNorm = normalizeKbText(q);
     const userTokens = tokenizeKbText(q);
+    const wantsLocation = isLocationCabinetQuery(q);
     if (!userNorm || userTokens.size === 0) continue;
     for (const e of entries) {
       const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
       const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
       let score = questionScore + answerScore * 0.6 + (feedbackBoost.get(e.qNorm) || 0);
+      if (wantsLocation && answerHasCabinetInfo(e.answer)) score += 2.2;
+      if (wantsLocation && /it|поддержк|platonus|moodle|outlook|teams/iu.test(e.qNorm + " " + e.aNorm)) score += 1.1;
       if (continuity?.category && e.category === continuity.category) score += continuity?.topicLock ? 1.6 : 0.9;
       if (continuity?.questionNorm && e.qNorm === continuity.questionNorm) score += continuity?.topicLock ? 3.2 : 0.4;
       const qOverlap = tokenOverlapCount(userTokens, e.qTokens);
@@ -1405,7 +1421,12 @@ app.post("/api/student/chat", async (req, res) => {
     (!secondKb || bestKb.score - secondKb.score >= 0.9) &&
     !repeatedAnswer &&
     !hardIntentShift;
-  if (canReplyDirectKb && bestKb) {
+  const locationFallback =
+    !!bestKb &&
+    isLocationCabinetQuery(lastUserQuestion) &&
+    answerHasCabinetInfo(bestKb.entry.answer) &&
+    bestKb.score >= 4.6;
+  if ((canReplyDirectKb || locationFallback) && bestKb) {
     return res.json({
       reply: bestKb.entry.answer.trim(),
       source: "local_kb_best",
