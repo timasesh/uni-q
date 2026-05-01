@@ -898,8 +898,54 @@ type ChatKbEntry = {
   answer: string;
   qNorm: string;
   qTokens: Set<string>;
+  qTrigrams: Set<string>;
 };
 let chatKbCache: { mtimeMs: number; entries: ChatKbEntry[] } | null = null;
+const KB_RU_STOPWORDS = new Set([
+  "как",
+  "что",
+  "где",
+  "когда",
+  "почему",
+  "зачем",
+  "можно",
+  "ли",
+  "у",
+  "в",
+  "на",
+  "по",
+  "для",
+  "я",
+  "мне",
+  "мой",
+  "моя",
+  "мое",
+  "мы",
+  "вы",
+  "если",
+  "это",
+  "этот",
+  "эта",
+  "эту",
+  "или",
+  "и",
+  "а",
+  "но",
+  "с",
+  "со",
+  "от",
+  "до",
+  "про",
+  "о",
+  "об",
+  "под",
+  "над",
+  "за",
+  "из",
+  "же",
+  "бы",
+  "пожалуйста",
+]);
 
 function normalizeKbText(v: string): string {
   return String(v || "")
@@ -914,8 +960,18 @@ function tokenizeKbText(v: string): Set<string> {
   const tokens = normalizeKbText(v)
     .split(" ")
     .map((x) => x.trim())
-    .filter((x) => x.length >= 3);
+    .filter((x) => x.length >= 3 && !KB_RU_STOPWORDS.has(x));
   return new Set(tokens);
+}
+
+function trigramsKbText(v: string): Set<string> {
+  const s = normalizeKbText(v).replace(/\s+/g, " ");
+  if (s.length < 3) return new Set(s ? [s] : []);
+  const out = new Set<string>();
+  for (let i = 0; i <= s.length - 3; i += 1) {
+    out.add(s.slice(i, i + 3));
+  }
+  return out;
 }
 
 function loadChatKb(): ChatKbEntry[] {
@@ -937,6 +993,7 @@ function loadChatKb(): ChatKbEntry[] {
   if (!ws) return [];
   const rows = (xlsx as any).utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
   const out: ChatKbEntry[] = [];
+  const seenQ = new Set<string>();
   let currentCategory = "";
   for (let i = 1; i < rows.length; i += 1) {
     const row = rows[i] || [];
@@ -946,9 +1003,12 @@ function loadChatKb(): ChatKbEntry[] {
     const answer = String(row[2] || "").trim();
     if (!question || !answer) continue;
     const qNorm = normalizeKbText(question);
+    if (seenQ.has(qNorm)) continue;
     const qTokens = tokenizeKbText(question);
+    const qTrigrams = trigramsKbText(question);
     if (!qNorm || qTokens.size === 0) continue;
-    out.push({ category: currentCategory || "Прочее", question, answer, qNorm, qTokens });
+    out.push({ category: currentCategory || "Прочее", question, answer, qNorm, qTokens, qTrigrams });
+    seenQ.add(qNorm);
   }
   chatKbCache = { mtimeMs: st.mtimeMs, entries: out };
   console.log(`[student/chat] KB loaded: ${out.length} rows from ${p}`);
@@ -966,6 +1026,18 @@ function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEnt
   s += overlap * 1.7;
   const denom = Math.max(userTokens.size, item.qTokens.size, 1);
   s += (overlap / denom) * 4;
+  if (userTokens.size > 0) {
+    s += (overlap / userTokens.size) * 5;
+  }
+  const userTrigrams = trigramsKbText(userNorm);
+  if (userTrigrams.size > 0 && item.qTrigrams.size > 0) {
+    let tgOverlap = 0;
+    for (const g of userTrigrams) {
+      if (item.qTrigrams.has(g)) tgOverlap += 1;
+    }
+    const dice = (2 * tgOverlap) / (userTrigrams.size + item.qTrigrams.size);
+    s += dice * 8;
+  }
   return s;
 }
 
@@ -977,22 +1049,25 @@ function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   if (!userNorm || userTokens.size === 0) return [];
   const scored = entries
     .map((e) => ({ e, score: scoreKbEntry(userNorm, userTokens, e) }))
-    .filter((x) => x.score >= 1.5)
+    .filter((x) => x.score >= 2.2)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((x) => x.e);
   return scored;
 }
 
-function findKbExact(userQuestion: string): ChatKbEntry | null {
+function findKbBest(userQuestion: string): { entry: ChatKbEntry; score: number } | null {
   const entries = loadChatKb();
   if (entries.length === 0) return null;
   const userNorm = normalizeKbText(userQuestion);
-  if (!userNorm) return null;
-  const exact = entries.find((e) => e.qNorm === userNorm);
-  if (exact) return exact;
-  const contains = entries.find((e) => userNorm.includes(e.qNorm) || e.qNorm.includes(userNorm));
-  return contains || null;
+  const userTokens = tokenizeKbText(userQuestion);
+  if (!userNorm || userTokens.size === 0) return null;
+  let best: { entry: ChatKbEntry; score: number } | null = null;
+  for (const e of entries) {
+    const score = scoreKbEntry(userNorm, userTokens, e);
+    if (!best || score > best.score) best = { entry: e, score };
+  }
+  return best;
 }
 
 app.post("/api/student/chat", async (req, res) => {
@@ -1016,11 +1091,11 @@ app.post("/api/student/chat", async (req, res) => {
     return res.status(400).json({ error: "chat_invalid" });
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
-  const exactKb = findKbExact(lastUserQuestion);
-  if (exactKb) {
+  const bestKb = findKbBest(lastUserQuestion);
+  if (bestKb && bestKb.score >= 8.8) {
     return res.json({
-      reply: `[${exactKb.category}] ${exactKb.answer}`.trim(),
-      source: "local_kb_exact",
+      reply: `[${bestKb.entry.category}] ${bestKb.entry.answer}`.trim(),
+      source: "local_kb_best",
     });
   }
   const kbMatches = findKbMatches(lastUserQuestion, UNIQ_CHAT_KB_MAX_MATCHES);
