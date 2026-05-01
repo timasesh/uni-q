@@ -1108,6 +1108,12 @@ function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEnt
   return questionScore + answerScore * 0.6;
 }
 
+function tokenOverlapCount(a: Set<string>, b: Set<string>): number {
+  let n = 0;
+  for (const t of a) if (b.has(t)) n += 1;
+  return n;
+}
+
 function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   const entries = loadChatKb();
   if (entries.length === 0) return [];
@@ -1123,16 +1129,34 @@ function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   return scored;
 }
 
-function findKbBest(userQuestion: string): { entry: ChatKbEntry; score: number } | null {
+function findKbBest(userQuestion: string): {
+  entry: ChatKbEntry;
+  score: number;
+  questionScore: number;
+  answerScore: number;
+  qOverlap: number;
+  aOverlap: number;
+} | null {
   const entries = loadChatKb();
   if (entries.length === 0) return null;
   const userNorm = normalizeKbText(userQuestion);
   const userTokens = tokenizeKbText(userQuestion);
   if (!userNorm || userTokens.size === 0) return null;
-  let best: { entry: ChatKbEntry; score: number } | null = null;
+  let best: {
+    entry: ChatKbEntry;
+    score: number;
+    questionScore: number;
+    answerScore: number;
+    qOverlap: number;
+    aOverlap: number;
+  } | null = null;
   for (const e of entries) {
-    const score = scoreKbEntry(userNorm, userTokens, e);
-    if (!best || score > best.score) best = { entry: e, score };
+    const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
+    const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
+    const score = questionScore + answerScore * 0.6;
+    const qOverlap = tokenOverlapCount(userTokens, e.qTokens);
+    const aOverlap = tokenOverlapCount(userTokens, e.aTokens);
+    if (!best || score > best.score) best = { entry: e, score, questionScore, answerScore, qOverlap, aOverlap };
   }
   return best;
 }
@@ -1159,7 +1183,11 @@ app.post("/api/student/chat", async (req, res) => {
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
   const bestKb = findKbBest(lastUserQuestion);
-  if (bestKb && bestKb.score >= 7.2) {
+  // Direct KB reply only when confidence is strong by question semantics (avoid wrong answer by one shared word).
+  const canReplyDirectKb =
+    !!bestKb &&
+    (bestKb.questionScore >= 8.0 || (bestKb.score >= 8.8 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.4 && bestKb.aOverlap >= 3));
+  if (canReplyDirectKb && bestKb) {
     return res.json({
       reply: bestKb.entry.answer.trim(),
       source: "local_kb_best",

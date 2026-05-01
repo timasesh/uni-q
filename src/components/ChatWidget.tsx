@@ -6,6 +6,7 @@ import { AppLogo } from "../lib/brand";
 import { fetchJSON, readJSON } from "../api";
 
 type Msg = { id: string; role: "bot" | "user"; text: string };
+const CHAT_HISTORY_KEY = "uniq.student.chat.history.v1";
 
 export default function ChatWidget() {
   const { t, lang } = useI18n();
@@ -15,6 +16,34 @@ export default function ChatWidget() {
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const seededWelcomeRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_HISTORY_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Msg[];
+      if (!Array.isArray(parsed)) return;
+      const normalized = parsed
+        .filter((m) => m && (m.role === "user" || m.role === "bot") && typeof m.text === "string")
+        .slice(-80)
+        .map((m, i) => ({ id: m.id || `h-${Date.now()}-${i}`, role: m.role, text: m.text }));
+      if (normalized.length > 0) setMessages(normalized);
+    } catch {
+      // ignore invalid local storage payload
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (!messages.length) {
+        localStorage.removeItem(CHAT_HISTORY_KEY);
+        return;
+      }
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages.slice(-80)));
+    } catch {
+      // ignore storage failures
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!open) return;
