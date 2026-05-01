@@ -876,6 +876,76 @@ app.post("/api/registration/check", (req, res) => {
   res.json(result);
 });
 
+/** Чат-помощник студента: прокси к NVIDIA NIM (OpenAI-совместимый API). Ключ только на сервере: UNIQ_NVIDIA_API_KEY. */
+const UNIQ_NVIDIA_API_KEY = String(process.env.UNIQ_NVIDIA_API_KEY || "").trim();
+const UNIQ_NVIDIA_CHAT_MODEL = String(process.env.UNIQ_NVIDIA_CHAT_MODEL || "nvidia/nvidia-nemotron-nano-9b-v2").trim();
+const UNIQ_NVIDIA_API_BASE = String(process.env.UNIQ_NVIDIA_API_BASE || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "");
+const STUDENT_CHAT_SYSTEM = `You are a helpful assistant for the uni-q electronic queue at a university consultation center.
+Answer questions about getting a queue ticket, booking a time slot, waiting, cancellation, and general orientation.
+Be concise and accurate. If a question needs personal records, official documents, or account-specific actions, say the student should speak with staff at the desk or use the live queue.
+Reply in the same language as the user's last message when it is clearly Russian, Kazakh, or English; otherwise default to Russian.`;
+
+app.post("/api/student/chat", async (req, res) => {
+  if (!UNIQ_NVIDIA_API_KEY) {
+    return res.status(503).json({ error: "chat_unavailable" });
+  }
+  const raw = (req.body || {}) as { messages?: unknown };
+  if (!Array.isArray(raw.messages) || raw.messages.length === 0) {
+    return res.status(400).json({ error: "chat_invalid" });
+  }
+  const cleaned: { role: "user" | "assistant"; content: string }[] = [];
+  for (const m of raw.messages.slice(-24)) {
+    if (!m || typeof m !== "object") continue;
+    const role = String((m as any).role || "").toLowerCase();
+    const content = String((m as any).content ?? "").trim();
+    if (!content || content.length > 6000) continue;
+    if (role !== "user" && role !== "assistant") continue;
+    cleaned.push({ role, content });
+  }
+  if (cleaned.length === 0 || cleaned[cleaned.length - 1]!.role !== "user") {
+    return res.status(400).json({ error: "chat_invalid" });
+  }
+
+  const payload = {
+    model: UNIQ_NVIDIA_CHAT_MODEL,
+    messages: [{ role: "system", content: STUDENT_CHAT_SYSTEM }, ...cleaned],
+    max_tokens: 1024,
+    temperature: 0.6,
+    stream: false,
+  };
+
+  try {
+    const r = await fetch(`${UNIQ_NVIDIA_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${UNIQ_NVIDIA_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await r.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return res.status(502).json({ error: "chat_upstream" });
+    }
+    if (!r.ok) {
+      const msg = data?.error?.message || data?.message || r.statusText;
+      console.warn("[student/chat] NVIDIA error", r.status, msg);
+      return res.status(502).json({ error: "chat_upstream" });
+    }
+    const reply = data?.choices?.[0]?.message?.content;
+    if (typeof reply !== "string" || !reply.trim()) {
+      return res.status(502).json({ error: "chat_upstream" });
+    }
+    res.json({ reply: reply.trim() });
+  } catch (e) {
+    console.warn("[student/chat] fetch failed", e);
+    return res.status(502).json({ error: "chat_upstream" });
+  }
+});
+
 function base64UrlDecodeToString(input: string): string {
   const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
   const b64 = (input + pad).replace(/-/g, "+").replace(/_/g, "/");

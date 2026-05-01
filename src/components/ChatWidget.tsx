@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, X } from "lucide-react";
+import { Loader2, MessageCircle, Send, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import { cn } from "../lib/cn";
 import { AppLogo } from "../lib/brand";
-
-const CHATBOT_URL = "https://t.me/uniq_advising_bot";
+import { fetchJSON, readJSON } from "../api";
 
 type Msg = { id: string; role: "bot" | "user"; text: string };
 
@@ -13,13 +12,14 @@ export default function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const seededWelcomeRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, open]);
+  }, [messages, open, sending]);
 
   useEffect(() => {
     if (!open) {
@@ -37,20 +37,51 @@ export default function ChatWidget() {
     setMessages((m) => [...m, { id: `${Date.now()}-b`, role: "bot", text }]);
   };
 
-  const send = () => {
+  const send = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || sending) return;
     setInput("");
-    setMessages((m) => [...m, { id: `${Date.now()}-u`, role: "user", text }]);
-    void (async () => {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch {
-        /* ignore */
+    const userMsg: Msg = { id: `${Date.now()}-u`, role: "user", text };
+    setMessages((m) => [...m, userMsg]);
+    setSending(true);
+
+    const openAi: { role: "user" | "assistant"; content: string }[] = [...messages, userMsg].map((m) => ({
+      role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+      content: m.text,
+    }));
+    while (openAi.length > 0 && openAi[0]!.role === "assistant") {
+      openAi.shift();
+    }
+    const apiMessages = openAi.slice(-24);
+
+    try {
+      const res = await fetchJSON("/api/student/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages }),
+      });
+      const js = (await readJSON<{ reply?: string; error?: string }>(res).catch(() => ({}))) as {
+        reply?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        const code = js.error;
+        if (code === "chat_unavailable") pushBot(t("chatWidgetErrorUnavailable"));
+        else if (code === "chat_invalid") pushBot(t("chatWidgetErrorInvalid"));
+        else pushBot(t("chatWidgetErrorUpstream"));
+        return;
       }
-      window.open(CHATBOT_URL, "_blank", "noopener,noreferrer");
-      pushBot(t("chatWidgetAfterSend"));
-    })();
+      const reply = String(js.reply || "").trim();
+      if (!reply) {
+        pushBot(t("chatWidgetErrorUpstream"));
+        return;
+      }
+      pushBot(reply);
+    } catch {
+      pushBot(t("chatWidgetErrorUpstream"));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -111,6 +142,12 @@ export default function ChatWidget() {
                 {msg.text}
               </div>
             ))}
+            {sending ? (
+              <div className="flex items-center gap-2 self-start rounded-2xl rounded-bl-md bg-white px-3.5 py-2.5 text-sm font-semibold text-violet-700 ring-1 ring-violet-100 dark:bg-slate-800 dark:text-violet-200 dark:ring-white/10">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                {t("chatWidgetThinking")}
+              </div>
+            ) : null}
             <div ref={endRef} />
           </div>
 
@@ -118,7 +155,7 @@ export default function ChatWidget() {
             className="border-t border-violet-100 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
             onSubmit={(e) => {
               e.preventDefault();
-              send();
+              void send();
             }}
           >
             <div className="flex gap-2">
@@ -128,11 +165,12 @@ export default function ChatWidget() {
                 placeholder={t("chatWidgetPlaceholder")}
                 className="ui-input min-h-[44px] flex-1 text-sm"
                 autoComplete="off"
+                disabled={sending}
               />
               <button
                 type="submit"
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white shadow-md transition hover:bg-teal-500 disabled:opacity-40"
-                disabled={!input.trim()}
+                disabled={!input.trim() || sending}
                 aria-label={t("chatWidgetSend")}
               >
                 <Send className="h-5 w-5" strokeWidth={2.2} />
