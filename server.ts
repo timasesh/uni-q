@@ -9,7 +9,7 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import path from "path";
 import fs from "fs";
-import * as XLSX from "xlsx";
+import xlsx from "xlsx";
 import {
   fireVisitLogInsertPg,
   initPgHistoryPool,
@@ -924,12 +924,18 @@ function loadChatKb(): ChatKbEntry[] {
   const st = fs.statSync(p);
   if (chatKbCache && chatKbCache.mtimeMs === st.mtimeMs) return chatKbCache.entries;
 
-  const wb = XLSX.readFile(p);
+  const readFileFn =
+    (xlsx as any)?.readFile || (xlsx as any)?.default?.readFile;
+  if (typeof readFileFn !== "function") {
+    console.warn("[student/chat] xlsx.readFile is unavailable in current runtime");
+    return [];
+  }
+  const wb = readFileFn(p);
   const firstSheet = wb.SheetNames[0];
   if (!firstSheet) return [];
   const ws = wb.Sheets[firstSheet];
   if (!ws) return [];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
+  const rows = (xlsx as any).utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
   const out: ChatKbEntry[] = [];
   let currentCategory = "";
   for (let i = 1; i < rows.length; i += 1) {
