@@ -906,6 +906,7 @@ const UNIQ_NVIDIA_CHAT_MODEL = String(process.env.UNIQ_NVIDIA_CHAT_MODEL || "nvi
 const UNIQ_NVIDIA_API_BASE = String(process.env.UNIQ_NVIDIA_API_BASE || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "");
 const UNIQ_CHAT_KB_XLSX_PATH = String(process.env.UNIQ_CHAT_KB_XLSX_PATH || path.join(process.cwd(), "chat_bot", "1300_вопросов_от_студентов_для_базы_данных.xlsx")).trim();
 const UNIQ_CHAT_KB_MAX_MATCHES = Math.min(8, Math.max(1, Number(process.env.UNIQ_CHAT_KB_MAX_MATCHES || 5)));
+const UNIQ_CHAT_DEBUG = String(process.env.UNIQ_CHAT_DEBUG || "0") === "1";
 const STUDENT_CHAT_SYSTEM = `Role: You are an expert academic assistant of the university consultation center (uni-q), working with the local KB file "1300_вопросов_от_студентов_для_базы_данных.xlsx".
 
 Main goal:
@@ -1229,6 +1230,60 @@ function isStrongTopicSwitch(userText: string, anchor: ChatKbEntry | null): bool
   return overlap <= 1;
 }
 
+function detectUnsafeAcademicCheating(text: string): boolean {
+  const s = normalizeKbText(text);
+  if (!s) return false;
+  return /(списат|обман|шпаргал|подсказ|cheat|作弊|қулық|алдау)/iu.test(s);
+}
+
+type ChatIntent =
+  | "military"
+  | "grades"
+  | "gpa"
+  | "retake"
+  | "registration"
+  | "schedule"
+  | "it_access"
+  | "payment"
+  | "scholarship"
+  | "hostel"
+  | "documents"
+  | "academic_leave"
+  | "other";
+
+function detectIntent(text: string): ChatIntent {
+  const s = normalizeKbText(text);
+  if (!s) return "other";
+  if (/(военн|кафедр|әскери|military)/iu.test(s)) return "military";
+  if (/(gpa|оценк|баға|транскрипт|успеваем)/iu.test(s)) return "grades";
+  if (/(ретейк|пересдач|fx\b|f\b|академ.*разниц)/iu.test(s)) return "retake";
+  if (/(регистрац|запис|иуп|план дисциплин)/iu.test(s)) return "registration";
+  if (/(расписан|экзамен|сесси)/iu.test(s)) return "schedule";
+  if (/(platonus|moodle|outlook|teams|парол|логин|доступ|it)/iu.test(s)) return "it_access";
+  if (/(оплат|договор|долг|задолжен|fee|tuition)/iu.test(s)) return "payment";
+  if (/(стипенд|шәкіртақ)/iu.test(s)) return "scholarship";
+  if (/(общежит|жатақхана|dorm)/iu.test(s)) return "hostel";
+  if (/(справк|заявлен|документ|құжат|certificate)/iu.test(s)) return "documents";
+  if (/(академ.*отпуск|академиялық.*демалыс)/iu.test(s)) return "academic_leave";
+  return "other";
+}
+
+function meaningfullyDifferentQuestion(a: string, b: string): boolean {
+  const ta = tokenizeKbText(a);
+  const tb = tokenizeKbText(b);
+  if (ta.size === 0 || tb.size === 0) return false;
+  const overlap = tokenOverlapCount(ta, tb);
+  const ratio = overlap / Math.max(ta.size, tb.size);
+  return ratio < 0.35;
+}
+
+function getLastAssistantAnswer(cleaned: { role: "user" | "assistant"; content: string }[]): string | null {
+  for (let i = cleaned.length - 1; i >= 0; i -= 1) {
+    if (cleaned[i]?.role === "assistant") return String(cleaned[i]?.content || "");
+  }
+  return null;
+}
+
 function rankKbByQueries(
   queries: string[],
   continuity?: { category?: string; questionNorm?: string | null; topicLock?: boolean }
@@ -1264,7 +1319,8 @@ app.post("/api/student/chat", async (req, res) => {
   if (!UNIQ_NVIDIA_API_KEY) {
     return res.status(503).json({ error: "chat_unavailable" });
   }
-  const raw = (req.body || {}) as { messages?: unknown };
+  const raw = (req.body || {}) as { messages?: unknown; debug?: unknown };
+  const debugRequested = UNIQ_CHAT_DEBUG || raw.debug === true || String((req.query as any)?.debug || "") === "1";
   if (!Array.isArray(raw.messages) || raw.messages.length === 0) {
     return res.status(400).json({ error: "chat_invalid" });
   }
@@ -1283,6 +1339,23 @@ app.post("/api/student/chat", async (req, res) => {
     return res.status(400).json({ error: "chat_invalid" });
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
+  if (detectUnsafeAcademicCheating(lastUserQuestion)) {
+    return res.json({
+      reply:
+        "Я не могу помогать с обходом правил или списыванием на экзамене. Вместо этого помогу подготовиться честно: могу составить краткий план подготовки по предмету, список тем для повторения и шаблон вопросов к преподавателю/тьютору.",
+      source: "policy_refusal",
+      kbQuestionNorm: null,
+      ...(debugRequested
+        ? {
+            debug: {
+              reason: "policy_refusal",
+              intentNow: detectIntent(lastUserQuestion),
+              lastUserQuestion,
+            },
+          }
+        : {}),
+    });
+  }
   let linkedAssistantIdx = -1;
   for (let i = cleaned.length - 1; i >= 0; i -= 1) {
     const m = cleaned[i];
@@ -1296,11 +1369,21 @@ app.post("/api/student/chat", async (req, res) => {
     ? loadChatKb().find((e) => e.qNorm === String(linkedAssistant.kbQuestionNorm || ""))
     : null;
   const userTurnsAfterAnchor = linkedAssistantIdx >= 0 ? countUserTurnsAfterIndex(cleaned, linkedAssistantIdx) : 99;
+  const lastAnchorUserQuestion =
+    linkedAssistantIdx >= 0
+      ? [...cleaned.slice(0, linkedAssistantIdx)]
+          .reverse()
+          .find((m) => m.role === "user")?.content || ""
+      : "";
+  const intentNow = detectIntent(lastUserQuestion);
+  const intentPrev = detectIntent(lastAnchorUserQuestion);
+  const hardIntentShift = intentPrev !== "other" && intentNow !== "other" && intentPrev !== intentNow;
   const topicLock =
     !!linkedKbEntry &&
     userTurnsAfterAnchor <= 3 &&
     isFollowupUserQuestion(lastUserQuestion) &&
-    !isStrongTopicSwitch(lastUserQuestion, linkedKbEntry);
+    !isStrongTopicSwitch(lastUserQuestion, linkedKbEntry) &&
+    !hardIntentShift;
   const retrievalQueries = buildRetrievalQueries(cleaned);
   const ranked = rankKbByQueries(retrievalQueries, {
     category: topicLock || isFollowupUserQuestion(lastUserQuestion) ? linkedKbEntry?.category : undefined,
@@ -1309,16 +1392,44 @@ app.post("/api/student/chat", async (req, res) => {
   });
   const bestKb = ranked[0] ?? null;
   const secondKb = ranked[1] ?? null;
+  const lastAssistantAnswer = getLastAssistantAnswer(cleaned);
+  const repeatedAnswer =
+    !!bestKb &&
+    !!lastAssistantAnswer &&
+    normalizeKbText(String(lastAssistantAnswer || "")) === normalizeKbText(bestKb.entry.answer) &&
+    meaningfullyDifferentQuestion(lastUserQuestion, lastAnchorUserQuestion);
   // Direct KB reply only when confidence is strong by question semantics (avoid wrong answer by one shared word).
   const canReplyDirectKb =
     !!bestKb &&
     (bestKb.questionScore >= 8.0 || (bestKb.score >= 8.8 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.4 && bestKb.aOverlap >= 3)) &&
-    (!secondKb || bestKb.score - secondKb.score >= 0.9);
+    (!secondKb || bestKb.score - secondKb.score >= 0.9) &&
+    !repeatedAnswer &&
+    !hardIntentShift;
   if (canReplyDirectKb && bestKb) {
     return res.json({
       reply: bestKb.entry.answer.trim(),
       source: "local_kb_best",
       kbQuestionNorm: bestKb.entry.qNorm,
+      ...(debugRequested
+        ? {
+            debug: {
+              reason: "direct_kb",
+              intentNow,
+              intentPrev,
+              hardIntentShift,
+              topicLock,
+              userTurnsAfterAnchor,
+              bestScore: bestKb.score,
+              bestQuestionScore: bestKb.questionScore,
+              bestQOverlap: bestKb.qOverlap,
+              bestAOverlap: bestKb.aOverlap,
+              secondScore: secondKb?.score ?? null,
+              retrievalQueries,
+              bestQuestion: bestKb.entry.question,
+              bestCategory: bestKb.entry.category,
+            },
+          }
+        : {}),
     });
   }
   const kbMatches =
@@ -1373,7 +1484,31 @@ app.post("/api/student/chat", async (req, res) => {
     if (typeof reply !== "string" || !reply.trim()) {
       return res.status(502).json({ error: "chat_upstream" });
     }
-    res.json({ reply: reply.trim(), source: "nvidia", kbQuestionNorm: bestKb?.entry?.qNorm || null });
+    res.json({
+      reply: reply.trim(),
+      source: "nvidia",
+      kbQuestionNorm: bestKb?.entry?.qNorm || null,
+      ...(debugRequested
+        ? {
+            debug: {
+              reason: "nvidia",
+              intentNow,
+              intentPrev,
+              hardIntentShift,
+              topicLock,
+              userTurnsAfterAnchor,
+              bestScore: bestKb?.score ?? null,
+              bestQuestionScore: bestKb?.questionScore ?? null,
+              bestQOverlap: bestKb?.qOverlap ?? null,
+              bestAOverlap: bestKb?.aOverlap ?? null,
+              secondScore: secondKb?.score ?? null,
+              repeatedAnswer,
+              retrievalQueries,
+              kbMatches: kbMatches.map((m) => ({ category: m.category, question: m.question })),
+            },
+          }
+        : {}),
+    });
   } catch (e) {
     console.warn("[student/chat] fetch failed", e);
     return res.status(502).json({ error: "chat_upstream" });

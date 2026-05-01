@@ -13,8 +13,10 @@ type Msg = {
   kbQuestionNorm?: string | null;
   userQuestion?: string | null;
   feedback?: -1 | 0 | 1;
+  debug?: Record<string, unknown> | null;
 };
 const CHAT_HISTORY_KEY = "uniq.student.chat.history.v1";
+const CHAT_DEBUG_KEY = "uniq.student.chat.debug.v1";
 
 export default function ChatWidget() {
   const { t, lang } = useI18n();
@@ -22,6 +24,13 @@ export default function ChatWidget() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [sending, setSending] = useState(false);
+  const [debugMode, setDebugMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CHAT_DEBUG_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const endRef = useRef<HTMLDivElement>(null);
   const seededWelcomeRef = useRef(false);
 
@@ -42,6 +51,7 @@ export default function ChatWidget() {
           kbQuestionNorm: typeof m.kbQuestionNorm === "string" ? m.kbQuestionNorm : null,
           userQuestion: typeof m.userQuestion === "string" ? m.userQuestion : null,
           feedback: (m.feedback === 1 || m.feedback === -1 ? m.feedback : 0) as -1 | 0 | 1,
+          debug: m.debug && typeof m.debug === "object" ? (m.debug as Record<string, unknown>) : null,
         }));
       if (normalized.length > 0) setMessages(normalized);
     } catch {
@@ -62,6 +72,14 @@ export default function ChatWidget() {
   }, [messages]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_DEBUG_KEY, debugMode ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [debugMode]);
+
+  useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open, sending]);
@@ -80,7 +98,12 @@ export default function ChatWidget() {
 
   const pushBot = (
     text: string,
-    meta?: { source?: string | null; kbQuestionNorm?: string | null; userQuestion?: string | null }
+    meta?: {
+      source?: string | null;
+      kbQuestionNorm?: string | null;
+      userQuestion?: string | null;
+      debug?: Record<string, unknown> | null;
+    }
   ) => {
     setMessages((m) => [
       ...m,
@@ -92,6 +115,7 @@ export default function ChatWidget() {
         kbQuestionNorm: meta?.kbQuestionNorm ?? null,
         userQuestion: meta?.userQuestion ?? null,
         feedback: 0,
+        debug: meta?.debug ?? null,
       },
     ]);
   };
@@ -144,13 +168,20 @@ export default function ChatWidget() {
       const res = await fetchJSON("/api/student/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: apiMessages, debug: debugMode }),
       });
-      const js = (await readJSON<{ reply?: string; error?: string; source?: string; kbQuestionNorm?: string | null }>(res).catch(() => ({}))) as {
+      const js = (await readJSON<{
         reply?: string;
         error?: string;
         source?: string;
         kbQuestionNorm?: string | null;
+        debug?: Record<string, unknown>;
+      }>(res).catch(() => ({}))) as {
+        reply?: string;
+        error?: string;
+        source?: string;
+        kbQuestionNorm?: string | null;
+        debug?: Record<string, unknown>;
       };
       if (!res.ok) {
         const code = js.error;
@@ -168,6 +199,7 @@ export default function ChatWidget() {
         source: js.source || null,
         kbQuestionNorm: js.kbQuestionNorm ?? null,
         userQuestion: text,
+        debug: js.debug ?? null,
       });
     } catch {
       pushBot(t("chatWidgetErrorUpstream"));
@@ -210,6 +242,17 @@ export default function ChatWidget() {
                 <div className="truncate text-[11px] font-semibold text-teal-100">{t("chatWidgetSubtitle")}</div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setDebugMode((v) => !v)}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wide",
+                debugMode ? "bg-amber-300 text-amber-950" : "bg-white/20 text-white"
+              )}
+              title="Режим отладки"
+            >
+              DBG
+            </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -261,6 +304,11 @@ export default function ChatWidget() {
                       👎
                     </button>
                   </div>
+                ) : null}
+                {msg.role === "bot" && debugMode && msg.debug ? (
+                  <pre className="mt-2 max-w-full overflow-auto rounded-md bg-black/20 p-2 text-[10px] leading-relaxed text-violet-100 dark:bg-black/30">
+                    {JSON.stringify(msg.debug, null, 2)}
+                  </pre>
                 ) : null}
               </div>
             ))}
