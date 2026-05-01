@@ -1210,9 +1210,28 @@ function isFollowupUserQuestion(text: string): boolean {
   return tok <= 4 || /^(а|нет|то есть|т е|и|или|но|тогда|если|еще|ещ[её]|как это|что дальше|куда|где|когда)\b/iu.test(s);
 }
 
+function countUserTurnsAfterIndex(
+  cleaned: { role: "user" | "assistant"; content: string; source?: string; kbQuestionNorm?: string }[],
+  idxExclusive: number
+): number {
+  let n = 0;
+  for (let i = idxExclusive + 1; i < cleaned.length; i += 1) {
+    if (cleaned[i]?.role === "user") n += 1;
+  }
+  return n;
+}
+
+function isStrongTopicSwitch(userText: string, anchor: ChatKbEntry | null): boolean {
+  if (!anchor) return false;
+  const userTokens = tokenizeKbText(userText);
+  if (userTokens.size < 5) return false;
+  const overlap = tokenOverlapCount(userTokens, anchor.qTokens);
+  return overlap <= 1;
+}
+
 function rankKbByQueries(
   queries: string[],
-  continuity?: { category?: string; questionNorm?: string | null }
+  continuity?: { category?: string; questionNorm?: string | null; topicLock?: boolean }
 ): { entry: ChatKbEntry; score: number; questionScore: number; qOverlap: number; aOverlap: number }[] {
   const entries = loadChatKb();
   if (entries.length === 0 || queries.length === 0) return [];
@@ -1227,8 +1246,8 @@ function rankKbByQueries(
       const questionScore = scoreTextAgainst(userNorm, userTokens, e.qNorm, e.qTokens, e.qTrigrams);
       const answerScore = scoreTextAgainst(userNorm, userTokens, e.aNorm, e.aTokens, e.aTrigrams);
       let score = questionScore + answerScore * 0.6 + (feedbackBoost.get(e.qNorm) || 0);
-      if (continuity?.category && e.category === continuity.category) score += 0.9;
-      if (continuity?.questionNorm && e.qNorm === continuity.questionNorm) score += 0.4;
+      if (continuity?.category && e.category === continuity.category) score += continuity?.topicLock ? 1.6 : 0.9;
+      if (continuity?.questionNorm && e.qNorm === continuity.questionNorm) score += continuity?.topicLock ? 3.2 : 0.4;
       const qOverlap = tokenOverlapCount(userTokens, e.qTokens);
       const aOverlap = tokenOverlapCount(userTokens, e.aTokens);
       const prev = byEntry.get(e);
@@ -1264,16 +1283,29 @@ app.post("/api/student/chat", async (req, res) => {
     return res.status(400).json({ error: "chat_invalid" });
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
-  const linkedAssistant = [...cleaned]
-    .reverse()
-    .find((m) => m.role === "assistant" && m.source === "local_kb_best" && m.kbQuestionNorm);
+  let linkedAssistantIdx = -1;
+  for (let i = cleaned.length - 1; i >= 0; i -= 1) {
+    const m = cleaned[i];
+    if (m?.role === "assistant" && m?.source === "local_kb_best" && m?.kbQuestionNorm) {
+      linkedAssistantIdx = i;
+      break;
+    }
+  }
+  const linkedAssistant = linkedAssistantIdx >= 0 ? cleaned[linkedAssistantIdx] : null;
   const linkedKbEntry = linkedAssistant
     ? loadChatKb().find((e) => e.qNorm === String(linkedAssistant.kbQuestionNorm || ""))
     : null;
+  const userTurnsAfterAnchor = linkedAssistantIdx >= 0 ? countUserTurnsAfterIndex(cleaned, linkedAssistantIdx) : 99;
+  const topicLock =
+    !!linkedKbEntry &&
+    userTurnsAfterAnchor <= 3 &&
+    isFollowupUserQuestion(lastUserQuestion) &&
+    !isStrongTopicSwitch(lastUserQuestion, linkedKbEntry);
   const retrievalQueries = buildRetrievalQueries(cleaned);
   const ranked = rankKbByQueries(retrievalQueries, {
-    category: isFollowupUserQuestion(lastUserQuestion) ? linkedKbEntry?.category : undefined,
+    category: topicLock || isFollowupUserQuestion(lastUserQuestion) ? linkedKbEntry?.category : undefined,
     questionNorm: linkedKbEntry?.qNorm || null,
+    topicLock,
   });
   const bestKb = ranked[0] ?? null;
   const secondKb = ranked[1] ?? null;
