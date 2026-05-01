@@ -899,6 +899,9 @@ type ChatKbEntry = {
   qNorm: string;
   qTokens: Set<string>;
   qTrigrams: Set<string>;
+  aNorm: string;
+  aTokens: Set<string>;
+  aTrigrams: Set<string>;
 };
 let chatKbCache: { mtimeMs: number; entries: ChatKbEntry[] } | null = null;
 const KB_RU_STOPWORDS = new Set([
@@ -1006,8 +1009,21 @@ function loadChatKb(): ChatKbEntry[] {
     if (seenQ.has(qNorm)) continue;
     const qTokens = tokenizeKbText(question);
     const qTrigrams = trigramsKbText(question);
+    const aNorm = normalizeKbText(answer);
+    const aTokens = tokenizeKbText(answer);
+    const aTrigrams = trigramsKbText(answer);
     if (!qNorm || qTokens.size === 0) continue;
-    out.push({ category: currentCategory || "Прочее", question, answer, qNorm, qTokens, qTrigrams });
+    out.push({
+      category: currentCategory || "Прочее",
+      question,
+      answer,
+      qNorm,
+      qTokens,
+      qTrigrams,
+      aNorm,
+      aTokens,
+      aTrigrams,
+    });
     seenQ.add(qNorm);
   }
   chatKbCache = { mtimeMs: st.mtimeMs, entries: out };
@@ -1015,30 +1031,43 @@ function loadChatKb(): ChatKbEntry[] {
   return out;
 }
 
-function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEntry): number {
+function scoreTextAgainst(
+  userNorm: string,
+  userTokens: Set<string>,
+  textNorm: string,
+  textTokens: Set<string>,
+  textTrigrams: Set<string>
+): number {
   let s = 0;
-  if (userNorm.includes(item.qNorm)) s += 8;
-  if (item.qNorm.includes(userNorm) && userNorm.length >= 7) s += 6;
+  if (userNorm.includes(textNorm)) s += 8;
+  if (textNorm.includes(userNorm) && userNorm.length >= 7) s += 6;
   let overlap = 0;
   for (const t of userTokens) {
-    if (item.qTokens.has(t)) overlap += 1;
+    if (textTokens.has(t)) overlap += 1;
   }
   s += overlap * 1.7;
-  const denom = Math.max(userTokens.size, item.qTokens.size, 1);
+  const denom = Math.max(userTokens.size, textTokens.size, 1);
   s += (overlap / denom) * 4;
   if (userTokens.size > 0) {
     s += (overlap / userTokens.size) * 5;
   }
   const userTrigrams = trigramsKbText(userNorm);
-  if (userTrigrams.size > 0 && item.qTrigrams.size > 0) {
+  if (userTrigrams.size > 0 && textTrigrams.size > 0) {
     let tgOverlap = 0;
     for (const g of userTrigrams) {
-      if (item.qTrigrams.has(g)) tgOverlap += 1;
+      if (textTrigrams.has(g)) tgOverlap += 1;
     }
-    const dice = (2 * tgOverlap) / (userTrigrams.size + item.qTrigrams.size);
+    const dice = (2 * tgOverlap) / (userTrigrams.size + textTrigrams.size);
     s += dice * 8;
   }
   return s;
+}
+
+function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEntry): number {
+  const questionScore = scoreTextAgainst(userNorm, userTokens, item.qNorm, item.qTokens, item.qTrigrams);
+  const answerScore = scoreTextAgainst(userNorm, userTokens, item.aNorm, item.aTokens, item.aTrigrams);
+  // Question wording stays primary; answer-text similarity is contextual fallback.
+  return questionScore + answerScore * 0.6;
 }
 
 function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
@@ -1092,7 +1121,7 @@ app.post("/api/student/chat", async (req, res) => {
   }
   const lastUserQuestion = cleaned[cleaned.length - 1]!.content;
   const bestKb = findKbBest(lastUserQuestion);
-  if (bestKb && bestKb.score >= 8.8) {
+  if (bestKb && bestKb.score >= 7.2) {
     return res.json({
       reply: `[${bestKb.entry.category}] ${bestKb.entry.answer}`.trim(),
       source: "local_kb_best",
