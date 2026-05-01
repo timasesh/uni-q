@@ -1161,7 +1161,7 @@ app.post("/api/student/chat", async (req, res) => {
   const bestKb = findKbBest(lastUserQuestion);
   if (bestKb && bestKb.score >= 7.2) {
     return res.json({
-      reply: `[${bestKb.entry.category}] ${bestKb.entry.answer}`.trim(),
+      reply: bestKb.entry.answer.trim(),
       source: "local_kb_best",
     });
   }
