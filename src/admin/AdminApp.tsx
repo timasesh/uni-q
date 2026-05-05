@@ -2706,14 +2706,6 @@ function AdminStats() {
       accent: "from-indigo-500 to-violet-600",
       linkTo: "/admin/stats/bookings",
     },
-    {
-      icon: Users,
-      title: "Все очереди",
-      desc: "Общий список активных талонов по менеджерам.",
-      metric: "Live",
-      accent: "from-cyan-500 to-blue-600",
-      linkTo: "/admin/stats/queues",
-    },
   ];
 
   return (
@@ -2992,7 +2984,6 @@ export default function AdminApp() {
         <Route path="stats/visits" element={<AdminVisitsExport />} />
         <Route path="stats/faq" element={<AdminFaqNoQueueStats />} />
         <Route path="stats/reviews" element={<AdminReviewsExport />} />
-        <Route path="stats/queues" element={<AdminQueuesBoard />} />
         <Route path="stats/schools" element={<AdminSchoolsServedStats />} />
         <Route path="stats/bookings" element={<AdminBookingsStats />} />
         <Route path="load" element={<AdminLoad />} />
