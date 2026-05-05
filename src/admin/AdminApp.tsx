@@ -11,7 +11,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   LogOut,
   BarChart3,
-  Users,
   Settings,
   HelpCircle,
   Download,
