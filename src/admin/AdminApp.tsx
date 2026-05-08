@@ -1183,6 +1183,7 @@ function AdminVisitsExport() {
   const [to, setTo] = useState(() => localYmdToday());
   const [visitStatus, setVisitStatus] = useState("");
   const [visitSchool, setVisitSchool] = useState("");
+  const [visitStudentName, setVisitStudentName] = useState("");
   const [rows, setRows] = useState<AdminVisitExportRow[] | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1197,6 +1198,7 @@ function AdminVisitsExport() {
     const qs = new URLSearchParams({ from, to });
     if (visitStatus.trim()) qs.set("status", visitStatus.trim().toUpperCase());
     if (visitSchool.trim()) qs.set("school", visitSchool.trim());
+    if (visitStudentName.trim()) qs.set("studentName", visitStudentName.trim());
     return qs;
   };
 
@@ -1302,6 +1304,18 @@ function AdminVisitsExport() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="flex min-w-[260px] flex-col gap-1.5">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              {t("adminFilterStudentName")}
+            </span>
+            <input
+              type="text"
+              value={visitStudentName}
+              onChange={(e) => setVisitStudentName(e.target.value)}
+              placeholder={t("adminFilterStudentNamePh")}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none ring-violet-400/30 focus:ring-4 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
           </label>
           <button
             type="button"

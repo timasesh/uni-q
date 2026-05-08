@@ -3206,6 +3206,13 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
   if (schoolQ) {
     rows = rows.filter((r) => String(r.school || "").toLowerCase().includes(schoolQ));
   }
+  const studentNameQ = String(req.query.studentName || "").trim().toLowerCase();
+  if (studentNameQ) {
+    rows = rows.filter((r) => {
+      const fullName = `${String(r.student_last_name || "").trim()} ${String(r.student_first_name || "").trim()}`.trim().toLowerCase();
+      return fullName.includes(studentNameQ);
+    });
+  }
 
   rows = rows.map((r) => ({
     ...r,
