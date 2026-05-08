@@ -95,7 +95,6 @@ export default function StudentPage() {
     }
   });
   const [waitTick, setWaitTick] = useState(0);
-  const schemeAutoOpenedRef = useRef<number | null>(null);
   const [missedReasonOpen, setMissedReasonOpen] = useState(false);
   const [missedReasonText, setMissedReasonText] = useState("");
   const [lastResult, setLastResult] = useState<LastStudentResult | null>(() => {
@@ -357,19 +356,6 @@ export default function StudentPage() {
     return () => window.clearInterval(id);
   }, [myTicket?.id, myTicket?.status, myTicket?.preferred_slot_at]);
 
-  useEffect(() => {
-    if (!myTicket) {
-      schemeAutoOpenedRef.current = null;
-      return;
-    }
-    if (myTicket.status !== "CALLED") return;
-    const w = parseDeskWindowNumber(myTicket.advisor_desk);
-    if (w == null) return;
-    if (schemeAutoOpenedRef.current === myTicket.id) return;
-    schemeAutoOpenedRef.current = myTicket.id;
-    setSchemeOpen(true);
-  }, [myTicket?.id, myTicket?.status, myTicket?.advisor_desk, myTicket]);
-
   const waitingTickets = live?.tickets ?? [];
   const progress = useMemo(() => {
     if (!waitingTickets || waitingTickets.length === 0) return 0;
@@ -557,6 +543,7 @@ export default function StudentPage() {
   const deskWindow = myTicket ? parseDeskWindowNumber(myTicket.advisor_desk) : null;
   const schemeWindowNumber = myTicket && myTicket.status === "WAITING" ? null : deskWindow;
   const showSchemeButton =
+    schemeFeatureEnabled &&
     myTicket &&
     (myTicket.status === "WAITING" || myTicket.status === "CALLED" || myTicket.status === "IN_SERVICE");
 
