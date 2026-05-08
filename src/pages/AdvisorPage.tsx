@@ -99,6 +99,70 @@ function formatMinDisplay(value: number | null | undefined, minShort: string): s
   return `${shown} ${minShort}`;
 }
 
+const CONTACT_TYPE_OPTIONS = [
+  { value: "QUESTION", label: "Вопрос" },
+  { value: "CONSULTATION", label: "Консультация" },
+  { value: "PROBLEM", label: "Проблема" },
+] as const;
+
+const CASE_CATEGORY_OPTIONS: Array<{ value: string; label: string; subcategories: string[] }> = [
+  {
+    value: "ACADEMIC",
+    label: "Академическая",
+    subcategories: [
+      "Регистрация",
+      "Запись на разницу дисциплин",
+      "Ретейк/замена дисциплины",
+      "Академический отпуск / выход из академического отпуска",
+      "Восстановление в университет",
+      "Перевод с/на другую образовательную программу",
+      "Индивидуальный учебный план",
+      "Продление сессии",
+      "Перезачёт дисциплин",
+      "Апелляция по оценке",
+      "Смена языка обучения/формы обучения",
+      "Отчисление",
+      "Выдача транскрипта",
+      "Ликвидация академической задолженности",
+    ],
+  },
+  {
+    value: "FINANCIAL",
+    label: "Финансовые",
+    subcategories: ["Оплата за обучение", "Пеня", "Скидка на обучение", "Транш", "Отсрочка оплаты за обучение/за ретейк", "Возврат денежных средств", "Перерасчёт оплаты", "Стипендия", "Финансовая задолженность", "Подтверждение оплаты", "Оплата общежития"],
+  },
+  {
+    value: "STATEMENTS",
+    label: "Заявления",
+    subcategories: ["Статус заявления", "Кому и куда подавать заявление (школа / Platonus / SSC / ЦОД / офис-регистратор)", "Как написать заявление на пересдачу или апелляцию", "Необходимые документы для подачи заявления", "Сроки рассмотрения заявления", "Причины отказа в заявлении", "Как исправить ошибку или отозвать заявление", "Уведомление о результате заявления", "Повторная подача заявления"],
+  },
+  {
+    value: "CERTIFICATES",
+    label: "Справки",
+    subcategories: ["Как получить справку об обучении", "Как оформить справку для военкомата", "Где оформляются справки (ЦОН / онлайн / SSC)", "Нужен ли ЭЦП для получения справки", "Нужны ли печать и подпись", "Срок изготовления и действия справки", "Что делать, если в справке ошибка", "Где получить справку о стипендии или успеваемости", "Справка для визы / посольства", "Архивные справки и их стоимость", "Получение справки третьим лицом", "Повторная выдача справки", "Проверка подлинности справки"],
+  },
+  {
+    value: "ONAY",
+    label: "ONAY",
+    subcategories: ["Как получить студенческую карту ONAY", "Как восстановить или заменить карту", "Есть ли льготы и скидки для студентов", "Что делать, если карта не работает", "Стоимость выпуска / перевыпуска карты", "Срок изготовления карты"],
+  },
+  {
+    value: "MILITARY_DEPT",
+    label: "Военная кафедра",
+    subcategories: ["Что такое военная кафедра и какие преимущества она даёт", "Кто может поступить (условия, GPA, требования)", "Какие документы нужны для поступления", "Этапы отбора и вступительные испытания", "Медицинская комиссия", "Сколько длится обучение", "Как совмещать обучение с основной учёбой", "Расписание занятий", "Стоимость обучения на военной кафедре", "Военные сборы и практика", "Какое воинское звание присваивается", "Обязательна ли служба после окончания", "Льготы после окончания", "Основания для отчисления", "Перевод или восстановление на военной кафедре", "Куда обращаться (контакты и график работы)"],
+  },
+  {
+    value: "ACADEMIC_MOBILITY",
+    label: "Академическая мобильность",
+    subcategories: ["Что такое академическая мобильность и какие есть программы", "В какие страны и университеты можно поехать", "На какой срок можно уехать по обмену", "Требования к участникам (GPA, уровень английского языка)", "Требуются ли сертификаты IELTS / TOEFL", "С какого курса можно участвовать", "Как подать заявку на участие", "Этапы подачи заявки и отбора (конкурс / собеседование)", "Какие документы нужно подготовить", "Когда дедлайны подачи документов", "Покрывает ли программа расходы на обучение и проживание", "Есть ли стипендии или гранты", "Какие расходы студент оплачивает самостоятельно", "Нужна ли виза и кто помогает с оформлением", "Медицинская страховка для участников", "На каком языке проходит обучение", "Можно ли выбирать любые курсы в принимающем университете", "Как происходит перезачёт дисциплин и перевод кредитов (ECTS)", "Что делать при академической разнице", "Возможна ли онлайн-мобильность", "Можно ли участвовать несколько раз", "Причины отказа в участии", "Контакты отдела академической мобильности", "Отзывы и опыт студентов-участников"],
+  },
+  {
+    value: "TECHNICAL",
+    label: "Технические",
+    subcategories: ["Проблемы со входом в систему", "Восстановление пароля", "Ошибки в Platonus / LMS", "Не отображаются дисциплины или оценки", "Ошибка при регистрации на дисциплины", "Проблемы с расписанием", "Ошибка при подаче заявления", "Проблемы с загрузкой документов", "Проблемы с корпоративной почтой", "Доступ к Teams / Moodle / LMS", "Ошибка отображения GPA или транскрипта", "Не работает ЭЦП", "Блокировка аккаунта", "Обновление персональных данных", "Ошибка доступа к онлайн-экзамену", "Куда обращаться по техническим вопросам", "Сроки устранения технических ошибок"],
+  },
+];
+
 function HistoryCommentCell({ text, t }: { text: string; t: (k: string) => string }) {
   const [open, setOpen] = useState(false);
   const long = historyCommentWordCount(text) > 35 || text.length > 180;
@@ -149,9 +213,9 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const [historyCommentEditId, setHistoryCommentEditId] = useState<number | null>(null);
   const [historyCommentDraft, setHistoryCommentDraft] = useState("");
 
-  const [inServiceCategory, setInServiceCategory] = useState<
-    "RETAKE" | "PAYMENT" | "DISCIPLINE" | "STATEMENT" | "CERTIFICATE" | "REGISTRATION" | "OTHER" | ""
-  >("");
+  const [inServiceCategory, setInServiceCategory] = useState("");
+  const [inServiceSubcategory, setInServiceSubcategory] = useState("");
+  const [inServiceContactType, setInServiceContactType] = useState("");
   const [inServiceComment, setInServiceComment] = useState("");
   const [inServiceStudentComment, setInServiceStudentComment] = useState("");
   const [inServiceAttachmentName, setInServiceAttachmentName] = useState("");
@@ -403,6 +467,8 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   useEffect(() => {
     if (!activeTicket || activeTicket.status !== "IN_SERVICE") return;
     setInServiceCategory((activeTicket.case_type as any) || "");
+    setInServiceSubcategory(String((activeTicket as any).case_subtype || ""));
+    setInServiceContactType(String((activeTicket as any).contact_type || ""));
     setInServiceComment(String(activeTicket.comment || ""));
     setInServiceStudentComment(String(activeTicket.student_comment || ""));
     setInServiceAttachmentName(String(activeTicket.manager_attachment_name || ""));
@@ -452,14 +518,18 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const submitComplete = async () => {
     if (!activeTicket || activeTicket.status !== "IN_SERVICE") return;
     const okCat = Boolean(inServiceCategory);
+    const okSubcategory = Boolean(inServiceSubcategory.trim());
+    const okContactType = Boolean(inServiceContactType);
     const wc = wordCount(inServiceComment);
     const okComment = wc > 0 && wc <= 300;
-    if (!okCat || !okComment) return;
+    if (!okCat || !okSubcategory || !okContactType || !okComment) return;
     const res = await fetchJSON(`/api/tickets/${activeTicket.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         case_type: inServiceCategory,
+        case_subtype: inServiceSubcategory,
+        contact_type: inServiceContactType,
         comment: inServiceComment,
         student_comment: inServiceStudentComment,
         manager_attachment_name: inServiceAttachmentName || null,
@@ -500,13 +570,14 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   };
 
   function caseTypeRu(caseType: string | null | undefined): string {
-    if (caseType === "RETAKE") return "Ритейк";
-    if (caseType === "PAYMENT") return "Оплата";
-    if (caseType === "DISCIPLINE") return "Вопрос по дисциплине";
-    if (caseType === "STATEMENT") return "Заявление";
-    if (caseType === "CERTIFICATE") return "Справки";
-    if (caseType === "REGISTRATION") return "Регистрация";
-    if (caseType === "OTHER") return "Другое";
+    if (caseType === "ACADEMIC") return "Академическая";
+    if (caseType === "FINANCIAL") return "Финансовые";
+    if (caseType === "STATEMENTS") return "Заявления";
+    if (caseType === "CERTIFICATES") return "Справки";
+    if (caseType === "ONAY") return "ONAY";
+    if (caseType === "MILITARY_DEPT") return "Военная кафедра";
+    if (caseType === "ACADEMIC_MOBILITY") return "Академическая мобильность";
+    if (caseType === "TECHNICAL") return "Технические";
     return "—";
   }
 
@@ -533,10 +604,6 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
           <AppLogo className="h-12 w-auto max-w-[200px] object-contain" />
         </div>
         <div className="text-lg font-extrabold tracking-tight text-violet-950 dark:text-sky-100">{t("managerLogin")}</div>
-        <div className="mt-1 text-xs font-semibold text-violet-800 dark:text-sky-300">
-          {t("loginHint")} <span className="font-mono">smirnov</span> / <span className="font-mono">ivanov</span>, {t("loginPasswordHint")}{" "}
-          <span className="font-mono">Manager2026!</span>
-        </div>
         <form onSubmit={doLogin} className="mt-4 space-y-3">
           <input
             className="ui-input"
@@ -791,20 +858,52 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                     />
                   </label>
                   <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Тип обращения:</span>
+                    <select
+                      value={inServiceContactType}
+                      onChange={(e) => setInServiceContactType(e.target.value)}
+                      className="rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
+                    >
+                      <option value="">-- Выберите тип обращения --</option>
+                      {CONTACT_TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
                     <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Категория:</span>
                     <select
                       value={inServiceCategory}
-                      onChange={(e) => setInServiceCategory(e.target.value as any)}
+                      onChange={(e) => {
+                        setInServiceCategory(e.target.value);
+                        setInServiceSubcategory("");
+                      }}
                       className="rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
                     >
                       <option value="">-- Выберите категорию --</option>
-                      <option value="RETAKE">{t("catRetake")}</option>
-                      <option value="PAYMENT">{t("catPayment")}</option>
-                      <option value="DISCIPLINE">{t("catDiscipline")}</option>
-                      <option value="STATEMENT">{t("catStatement")}</option>
-                      <option value="CERTIFICATE">{t("catCertificate")}</option>
-                      <option value="REGISTRATION">{t("catRegistration")}</option>
-                      <option value="OTHER">{t("catOther")}</option>
+                      {CASE_CATEGORY_OPTIONS.map((cat) => (
+                        <option key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Подкатегория:</span>
+                    <select
+                      value={inServiceSubcategory}
+                      onChange={(e) => setInServiceSubcategory(e.target.value)}
+                      disabled={!inServiceCategory}
+                      className="rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
+                    >
+                      <option value="">-- Выберите подкатегорию --</option>
+                      {(CASE_CATEGORY_OPTIONS.find((cat) => cat.value === inServiceCategory)?.subcategories || []).map((sub) => (
+                        <option key={sub} value={sub}>
+                          {sub}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label className="flex flex-col gap-1">
@@ -817,7 +916,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Проблема:</span>
+                    <span className="text-sm font-extrabold text-violet-900 dark:text-sky-100">Описание:</span>
                     <textarea
                       className="min-h-[80px] w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-violet-950 outline-none shadow-sm focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-white/10 dark:bg-blue-950/55 dark:text-sky-100 dark:focus:ring-white/10"
                       placeholder={t("studentCommentReq")}
@@ -863,7 +962,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
                   <button
                     type="button"
                     onClick={() => void submitComplete()}
-                    disabled={!inServiceCategory || wordCount(inServiceComment) === 0 || wordCount(inServiceComment) > 300}
+                    disabled={!inServiceCategory || !inServiceSubcategory || !inServiceContactType || wordCount(inServiceComment) === 0 || wordCount(inServiceComment) > 300}
                     className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 py-4 text-base font-extrabold text-white shadow-sm shadow-emerald-500/20 hover:bg-emerald-600"
                   >
                     <CheckCircle2 size={18} /> {t("complete")}

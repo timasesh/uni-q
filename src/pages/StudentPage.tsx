@@ -25,6 +25,7 @@ type StudentForm = {
 
 const STUDENT_FORM_DRAFT_KEY = "uniq.student.form.v2";
 const STUDENT_LAST_RESULT_KEY = "uniq.student.last.result.v1";
+const OFFICE_SCHEME_FEATURE_ENABLED_KEY = "uniq.office.scheme.feature.enabled";
 
 type LastStudentResult = {
   ticketId: number;
@@ -81,11 +82,18 @@ export default function StudentPage() {
   const [bookingSlotTick, setBookingSlotTick] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewDismissed, setReviewDismissed] = useState(false);
-  const [reviewStars, setReviewStars] = useState(5);
+  const [reviewStars, setReviewStars] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewThanks, setReviewThanks] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [schemeOpen, setSchemeOpen] = useState(false);
+  const [schemeFeatureEnabled, setSchemeFeatureEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(OFFICE_SCHEME_FEATURE_ENABLED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [waitTick, setWaitTick] = useState(0);
   const schemeAutoOpenedRef = useRef<number | null>(null);
   const [missedReasonOpen, setMissedReasonOpen] = useState(false);
@@ -264,6 +272,15 @@ export default function StudentPage() {
       window.clearTimeout(t);
     };
   }, [ticketId, schoolApi, form.specialtyCode, form.languageSection, form.course, form.studyDurationYears, liveQueueEpoch]);
+
+  useEffect(() => {
+    const onStorage = () => {
+      setSchemeFeatureEnabled(localStorage.getItem(OFFICE_SCHEME_FEATURE_ENABLED_KEY) === "1");
+    };
+    window.addEventListener("storage", onStorage);
+    onStorage();
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   useEffect(() => {
     if (!myTicket || myTicket.status !== "MISSED") {
@@ -495,6 +512,14 @@ export default function StudentPage() {
   const submitReview = async () => {
     if (!myTicket) return;
     if (reviewSubmitting) return;
+    if (reviewStars < 1 || reviewStars > 5) {
+      alert("Пожалуйста, поставьте оценку от 1 до 5.");
+      return;
+    }
+    if (reviewStars <= 3 && !reviewComment.trim()) {
+      alert("Для оценки 3 и ниже комментарий обязателен.");
+      return;
+    }
     setReviewSubmitting(true);
     // close immediately for better UX; reopen on error
     setReviewOpen(false);
@@ -687,7 +712,7 @@ export default function StudentPage() {
                 <div className="text-[10px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-300">Результат обработки</div>
                 {myTicket.student_comment ? (
                   <div className="mt-2 text-sm text-violet-900 dark:text-violet-100">
-                    <span className="font-black">Проблема:</span> {myTicket.student_comment}
+                    <span className="font-black">Описание:</span> {myTicket.student_comment}
                   </div>
                 ) : null}
                 {myTicket.comment ? (
@@ -980,11 +1005,21 @@ export default function StudentPage() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <SchemeImage
-                windowNumber={schemeWindowNumber}
-                alt=""
-                className="mx-auto w-full max-w-full rounded-lg object-contain"
-              />
+              {schemeFeatureEnabled ? (
+                <SchemeImage
+                  windowNumber={schemeWindowNumber}
+                  alt=""
+                  className="mx-auto w-full max-w-full rounded-lg object-contain"
+                />
+              ) : (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-4 text-sm font-semibold text-violet-900 dark:border-white/10 dark:bg-white/5 dark:text-sky-100">
+                  {deskWindow != null
+                    ? deskWindow === 6
+                      ? "Кабинет: окно руководителя"
+                      : `Кабинет: Окно ${deskWindow}`
+                    : "Информация об окне появится после вызова."}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1088,11 +1123,14 @@ export default function StudentPage() {
               ))}
             </div>
             <label className="mt-4 block">
-              <span className="text-xs font-extrabold text-violet-800 dark:text-violet-200">{t("studentReviewComment")}</span>
+              <span className="text-xs font-extrabold text-violet-800 dark:text-violet-200">
+                {reviewStars > 0 && reviewStars <= 3 ? "Комментарий (обязательно)" : t("studentReviewComment")}
+              </span>
               <textarea
                 className="ui-input mt-2 min-h-[80px] w-full"
                 value={reviewComment}
                 onChange={(e) => setReviewComment(e.target.value)}
+                required={reviewStars > 0 && reviewStars <= 3}
               />
             </label>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -1100,7 +1138,7 @@ export default function StudentPage() {
                 type="button"
                 className="ui-btn-primary flex-1"
                 onClick={() => void submitReview()}
-                disabled={reviewSubmitting}
+                disabled={reviewSubmitting || reviewStars < 1 || (reviewStars <= 3 && !reviewComment.trim())}
               >
                 {t("studentReviewSubmit")}
               </button>
@@ -1132,7 +1170,7 @@ export default function StudentPage() {
             </div>
             {lastResult.student_comment ? (
               <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
-                <div className="text-[11px] font-extrabold uppercase tracking-wide text-violet-700">Проблема</div>
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-violet-700">Описание</div>
                 <div className="mt-1 text-sm font-semibold text-violet-900">{lastResult.student_comment}</div>
               </div>
             ) : null}

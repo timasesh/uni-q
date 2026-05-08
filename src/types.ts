@@ -27,7 +27,9 @@ export type Ticket = {
   manager_attachment_name?: string | null;
   manager_attachment_data_url?: string | null;
   send_email_requested?: number | null;
-  case_type?: "RETAKE" | "PAYMENT" | "DISCIPLINE" | "STATEMENT" | "CERTIFICATE" | "REGISTRATION" | "OTHER" | null;
+  case_type?: string | null;
+  case_subtype?: string | null;
+  contact_type?: "QUESTION" | "CONSULTATION" | "PROBLEM" | null;
   estimated_time?: number | null;
   preferred_slot_at?: string | null;
   has_review?: number;

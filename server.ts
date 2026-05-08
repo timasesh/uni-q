@@ -178,6 +178,8 @@ CREATE TABLE IF NOT EXISTS tickets (
   advisor_department TEXT,
   comment TEXT,
   case_type TEXT,
+  case_subtype TEXT,
+  contact_type TEXT,
   student_comment TEXT,
   manager_attachment_name TEXT,
   manager_attachment_data_url TEXT,
@@ -258,6 +260,12 @@ function migrateDb() {
   }
   if (!ticketNames.has("send_email_requested")) {
     db.exec("ALTER TABLE tickets ADD COLUMN send_email_requested INTEGER");
+  }
+  if (!ticketNames.has("case_subtype")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN case_subtype TEXT");
+  }
+  if (!ticketNames.has("contact_type")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN contact_type TEXT");
   }
   const advisorCols = db.prepare("PRAGMA table_info(advisors)").all() as { name: string }[];
   const advisorNames = new Set(advisorCols.map((c) => c.name));
@@ -2465,10 +2473,12 @@ app.post("/api/tickets/:id/call-to-my-desk", requireManager, (req, res) => {
 app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный идентификатор" });
-  const { status, comment, case_type, student_comment, manager_attachment_name, manager_attachment_data_url, send_email_requested } = (req.body || {}) as {
+  const { status, comment, case_type, case_subtype, contact_type, student_comment, manager_attachment_name, manager_attachment_data_url, send_email_requested } = (req.body || {}) as {
     status?: TicketStatus;
     comment?: string;
     case_type?: string | null;
+    case_subtype?: string | null;
+    contact_type?: "QUESTION" | "CONSULTATION" | "PROBLEM" | null;
     student_comment?: string;
     manager_attachment_name?: string | null;
     manager_attachment_data_url?: string | null;
@@ -2484,6 +2494,14 @@ app.patch("/api/tickets/:id", requireManager, async (req, res) => {
   }
   if (case_type !== undefined) {
     db.prepare("UPDATE tickets SET case_type = ? WHERE id = ?").run(case_type === null ? null : String(case_type), id);
+    schedulePgCoreSync();
+  }
+  if (case_subtype !== undefined) {
+    db.prepare("UPDATE tickets SET case_subtype = ? WHERE id = ?").run(case_subtype === null ? null : String(case_subtype), id);
+    schedulePgCoreSync();
+  }
+  if (contact_type !== undefined) {
+    db.prepare("UPDATE tickets SET contact_type = ? WHERE id = ?").run(contact_type === null ? null : String(contact_type), id);
     schedulePgCoreSync();
   }
   if (student_comment !== undefined) {
@@ -2509,9 +2527,16 @@ app.patch("/api/tickets/:id", requireManager, async (req, res) => {
     const valid: TicketStatus[] = ["WAITING", "CALLED", "IN_SERVICE", "MISSED", "DONE", "CANCELLED"];
     if (!valid.includes(status)) return res.status(400).json({ error: "Неверный статус" });
     if (status === "DONE") {
-      const validTypes = ["RETAKE", "PAYMENT", "DISCIPLINE", "STATEMENT", "CERTIFICATE", "REGISTRATION", "OTHER"];
+      const validTypes = ["ACADEMIC", "FINANCIAL", "STATEMENTS", "CERTIFICATES", "ONAY", "MILITARY_DEPT", "ACADEMIC_MOBILITY", "TECHNICAL"];
+      const validContactTypes = ["QUESTION", "CONSULTATION", "PROBLEM"];
       if (!row.case_type || !validTypes.includes(String(row.case_type))) {
         return res.status(400).json({ error: "Укажите категорию обращения" });
+      }
+      if (!row.case_subtype || !String(row.case_subtype).trim()) {
+        return res.status(400).json({ error: "Укажите подкатегорию обращения" });
+      }
+      if (!row.contact_type || !validContactTypes.includes(String(row.contact_type))) {
+        return res.status(400).json({ error: "Укажите тип обращения" });
       }
       const wc = countWords(row.comment);
       if (wc < 1) return res.status(400).json({ error: "Комментарий обязателен" });
@@ -2555,10 +2580,14 @@ app.post("/api/tickets/:id/review", async (req, res) => {
   if (!Number.isFinite(st) || st < 1 || st > 5 || !Number.isInteger(st)) {
     return res.status(400).json({ error: "Оцените от 1 до 5 звёзд" });
   }
+  const reviewComment = String(comment || "").trim();
+  if (st <= 3 && reviewComment.length === 0) {
+    return res.status(400).json({ error: "Для оценки 3 и ниже комментарий обязателен" });
+  }
   db.prepare(`INSERT INTO ticket_reviews (ticket_id, stars, comment) VALUES (?, ?, ?)`).run(
     id,
     st,
-    String(comment || "").trim() || null
+    reviewComment || null
   );
   await flushPgCoreSyncNow();
   res.json({ ok: true });

@@ -29,11 +29,12 @@ import { useAdminContext, type AdminUser } from "../context/AdminContext";
 import { useManagerContext } from "../context/ManagerContext";
 import { cn } from "../lib/cn";
 import { SCHEME_WINDOW_COUNT, parseDeskWindowNumber } from "../lib/deskWindow";
-import SchemeImage from "../components/SchemeImage";
 import { AppLogo } from "../lib/brand";
 import { parseBackendDateTime } from "../lib/backendDateTime";
 import { SCHOOL_NAMES } from "../schools";
 import { formatStudyDuration, parseStudyDuration } from "../lib/studyDuration";
+
+const OFFICE_SCHEME_FEATURE_ENABLED_KEY = "uniq.office.scheme.feature.enabled";
 
 function formatHm(ms: number) {
   const s = Math.floor(Math.max(0, ms) / 1000);
@@ -504,6 +505,13 @@ function AdminWindows() {
   const [rows, setRows] = useState<AdvisorRow[] | null>(null);
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [schemeFeatureEnabled, setSchemeFeatureEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(OFFICE_SCHEME_FEATURE_ENABLED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const load = async () => {
     const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
@@ -583,17 +591,29 @@ function AdminWindows() {
     <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-md shadow-violet-900/5 dark:border-white/10 dark:bg-slate-950 md:p-6">
       <h2 className="mb-2 text-base font-black text-violet-950 dark:text-white">{t("adminWindowsTitle")}</h2>
       <p className="mb-6 text-sm font-medium leading-relaxed text-violet-700 dark:text-violet-300">{t("adminWindowsHint")}</p>
+      <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-violet-900 dark:text-sky-100">
+        <input
+          type="checkbox"
+          checked={schemeFeatureEnabled}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setSchemeFeatureEnabled(checked);
+            localStorage.setItem(OFFICE_SCHEME_FEATURE_ENABLED_KEY, checked ? "1" : "0");
+          }}
+          className="h-4 w-4 rounded border-violet-300 text-violet-600"
+        />
+        Схема кабинета включена
+      </label>
       {err && <div className="mb-3 text-sm font-semibold text-rose-600">{err}</div>}
       {!rows ? (
         <div className="py-12 text-center text-sm font-semibold text-violet-600 dark:text-violet-300">{t("loading")}</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[520px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-violet-100 text-xs font-extrabold uppercase tracking-wide text-violet-700 dark:border-white/10 dark:text-violet-300">
                 <th className="py-3 pr-3">{t("adminWindowsColWindow")}</th>
                 <th className="py-3 pr-3">{t("adminWindowsColEmployee")}</th>
-                <th className="py-3">{t("adminWindowsColPreview")}</th>
               </tr>
             </thead>
             <tbody>
@@ -622,13 +642,6 @@ function AdminWindows() {
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td className="py-3">
-                      <SchemeImage
-                        windowNumber={w}
-                        alt=""
-                        className="h-[72px] w-auto max-w-[min(100%,200px)] rounded-lg border border-violet-100 bg-slate-50 object-contain dark:border-white/10 dark:bg-slate-900"
-                      />
                     </td>
                   </tr>
                 );
