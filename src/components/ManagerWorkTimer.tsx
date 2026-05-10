@@ -8,6 +8,7 @@ import {
   syncManagerWorkSnapshotToServer,
 } from "../lib/advisorWorkSync";
 
+// Функция `formatWorkHm` реализует локальную часть бизнес-логики модуля.
 function formatWorkHm(ms: number) {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
@@ -20,16 +21,19 @@ type Props = {
   hidden?: boolean;
 };
 
+// Функция `makeTabId` реализует локальную часть бизнес-логики модуля.
 function makeTabId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Функция `lockKeys` реализует локальную часть бизнес-логики модуля.
 function lockKeys(managerId: number) {
   return {
     lock: `uniq.manager.workLock.${managerId}`,
   };
 }
 
+// Функция `tryAcquireWorkLock` реализует локальную часть бизнес-логики модуля.
 function tryAcquireWorkLock(managerId: number, tabId: string, ttlMs = 12_000): boolean {
   const { lock } = lockKeys(managerId);
   const now = Date.now();
@@ -53,6 +57,7 @@ function tryAcquireWorkLock(managerId: number, tabId: string, ttlMs = 12_000): b
   return true;
 }
 
+// Функция `ManagerWorkTimer` реализует локальную часть бизнес-логики модуля.
 export default function ManagerWorkTimer({ managerId, hidden = false }: Props) {
   const [sessionActive, setSessionActive] = useState(false);
   const [isLeader, setIsLeader] = useState(true);
@@ -72,12 +77,14 @@ export default function ManagerWorkTimer({ managerId, hidden = false }: Props) {
 
   useEffect(() => {
     const tabId = tabIdRef.current;
+    // Функция `ping` реализует локальную часть бизнес-логики модуля.
     const ping = () => {
       const ok = tryAcquireWorkLock(managerId, tabId);
       setIsLeader(ok);
     };
     ping();
     const id = window.setInterval(ping, 4000);
+    // Функция `onStorage` реализует локальную часть бизнес-логики модуля.
     const onStorage = (e: StorageEvent) => {
       if (!e.key) return;
       if (e.key === lockKeys(managerId).lock) ping();
@@ -91,6 +98,7 @@ export default function ManagerWorkTimer({ managerId, hidden = false }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    // Функция `poll` реализует локальную часть бизнес-логики модуля.
     const poll = async () => {
       const res = await fetchJSON("/api/managers/me");
       if (!res.ok || cancelled) return;
@@ -154,6 +162,7 @@ export default function ManagerWorkTimer({ managerId, hidden = false }: Props) {
 
   useEffect(() => {
     if (!isLeader) return;
+    // Функция `sync` реализует локальную часть бизнес-логики модуля.
     const sync = async () => {
       await syncManagerWorkSnapshotToServer(managerId);
     };
@@ -163,10 +172,12 @@ export default function ManagerWorkTimer({ managerId, hidden = false }: Props) {
 
   useEffect(() => {
     if (!isLeader) return;
+    // Функция `onVisibility` реализует локальную часть бизнес-логики модуля.
     const onVisibility = () => {
       if (!document.hidden) return;
       void syncManagerWorkSnapshotToServer(managerId);
     };
+    // Функция `onPageHide` реализует локальную часть бизнес-логики модуля.
     const onPageHide = () => {
       void syncManagerWorkSnapshotToServer(managerId);
     };

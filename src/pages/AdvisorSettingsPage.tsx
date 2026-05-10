@@ -34,6 +34,7 @@ type SchoolScopeSettings = {
   specialtyCodes: string[];
 };
 
+// Функция `parseSchoolScopes` реализует локальную часть бизнес-логики модуля.
 function parseSchoolScopes(raw: string | null | undefined): Record<string, SchoolScopeSettings> {
   if (!raw) return {};
   try {
@@ -64,6 +65,7 @@ function parseSchoolScopes(raw: string | null | undefined): Record<string, Schoo
   }
 }
 
+// Функция `AdvisorSettingsPage` реализует локальную часть бизнес-логики модуля.
 export default function AdvisorSettingsPage() {
   const { t } = useI18n();
   const nav = useNavigate();
@@ -165,6 +167,7 @@ export default function AdvisorSettingsPage() {
     setSpecialtyCodes((prev) => prev.filter((c) => valid.has(c)));
   }, [specialtiesForSelectedSchools]);
 
+  // Функция `toggleSchool` реализует локальную часть бизнес-логики модуля.
   const toggleSchool = (s: string) => {
     setSchools((prev) => {
       const next = prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s];
@@ -173,9 +176,11 @@ export default function AdvisorSettingsPage() {
       return next;
     });
   };
+  // Функция `toggleLang` реализует локальную часть бизнес-логики модуля.
   const toggleLang = (id: string) => {
     setLangs((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
+  // Функция `toggleCourse` реализует локальную часть бизнес-логики модуля.
   const toggleCourse = (n: number) => {
     setCourses((prev) => {
       const next = prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b);
@@ -183,13 +188,16 @@ export default function AdvisorSettingsPage() {
     });
   };
 
+  // Функция `toggleSpecialty` реализует локальную часть бизнес-логики модуля.
   const toggleSpecialty = (code: string) => {
     setSpecialtyCodes((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code].sort()));
   };
+  // Функция `toggleStudyYear` реализует локальную часть бизнес-логики модуля.
   const toggleStudyYear = (n: number) => {
     setStudyYears((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b)));
   };
 
+  // Функция `toggleScopeLang` реализует локальную часть бизнес-логики модуля.
   const toggleScopeLang = (langId: string) => {
     if (!scopeSchoolValue) return;
     setSchoolScopes((prev) => {
@@ -198,6 +206,7 @@ export default function AdvisorSettingsPage() {
       return { ...prev, [scopeSchoolValue]: { ...cur, langs: langs.sort() } };
     });
   };
+  // Функция `toggleScopeStudyYear` реализует локальную часть бизнес-логики модуля.
   const toggleScopeStudyYear = (n: number) => {
     if (!scopeSchoolValue) return;
     setSchoolScopes((prev) => {
@@ -206,6 +215,7 @@ export default function AdvisorSettingsPage() {
       return { ...prev, [scopeSchoolValue]: { ...cur, studyYears: years } };
     });
   };
+  // Функция `toggleScopeCourse` реализует локальную часть бизнес-логики модуля.
   const toggleScopeCourse = (n: number) => {
     if (!scopeSchoolValue) return;
     setSchoolScopes((prev) => {
@@ -214,6 +224,7 @@ export default function AdvisorSettingsPage() {
       return { ...prev, [scopeSchoolValue]: { ...cur, courses } };
     });
   };
+  // Функция `toggleScopeSpecialty` реализует локальную часть бизнес-логики модуля.
   const toggleScopeSpecialty = (code: string) => {
     if (!scopeSchoolValue) return;
     setSchoolScopes((prev) => {
@@ -224,6 +235,7 @@ export default function AdvisorSettingsPage() {
       return { ...prev, [scopeSchoolValue]: { ...cur, specialtyCodes } };
     });
   };
+  // Функция `applyCurrentScopeToAllSchools` реализует локальную часть бизнес-логики модуля.
   const applyCurrentScopeToAllSchools = () => {
     if (!scopeSchoolValue || schools.length === 0) return;
     setSchoolScopes((prev) => {
@@ -241,6 +253,7 @@ export default function AdvisorSettingsPage() {
     });
   };
 
+  // Функция `save` реализует локальную часть бизнес-логики модуля.
   const save = async () => {
     setMsg("");
     if (schools.length === 0) {
@@ -283,6 +296,7 @@ export default function AdvisorSettingsPage() {
     setMsg("Сохранено");
   };
 
+  // Функция `changePassword` реализует локальную часть бизнес-логики модуля.
   const changePassword = async () => {
     setPwMsg("");
     if (!pwCurrent || !pwNext) {

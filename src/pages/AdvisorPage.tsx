@@ -20,6 +20,7 @@ type Props = {
   setManagerDark: (next: boolean) => void;
 };
 
+// Функция `Switch` реализует локальную часть бизнес-логики модуля.
 function Switch({
   checked,
   onChange,
@@ -81,6 +82,7 @@ function Switch({
   );
 }
 
+// Функция `localYmd` реализует локальную часть бизнес-логики модуля.
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -88,10 +90,12 @@ function localYmd(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+// Функция `historyCommentWordCount` реализует локальную часть бизнес-логики модуля.
 function historyCommentWordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+// Функция `formatMinDisplay` реализует локальную часть бизнес-логики модуля.
 function formatMinDisplay(value: number | null | undefined, minShort: string): string {
   if (value == null || !Number.isFinite(Number(value))) return "—";
   const n = Number(value);
@@ -163,6 +167,7 @@ const CASE_CATEGORY_OPTIONS: Array<{ value: string; label: string; subcategories
   },
 ];
 
+// Функция `HistoryCommentCell` реализует локальную часть бизнес-логики модуля.
 function HistoryCommentCell({ text, t }: { text: string; t: (k: string) => string }) {
   const [open, setOpen] = useState(false);
   const long = historyCommentWordCount(text) > 35 || text.length > 180;
@@ -183,6 +188,7 @@ function HistoryCommentCell({ text, t }: { text: string; t: (k: string) => strin
   );
 }
 
+// Функция `AdvisorPage` реализует локальную часть бизнес-логики модуля.
 export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const { t, lang, setLang } = useI18n();
   const { setManagerId } = useManagerContext();
@@ -222,6 +228,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
   const [inServiceAttachmentDataUrl, setInServiceAttachmentDataUrl] = useState("");
   const [inServiceSendEmail, setInServiceSendEmail] = useState(false);
 
+  // Функция `onManagerLogoTap` реализует локальную часть бизнес-логики модуля.
   const onManagerLogoTap = () => {
     logoTapCountRef.current += 1;
     if (logoTapCountRef.current >= 10) {
@@ -291,6 +298,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     // scope settings are edited on /manager/settings
   }
 
+  // Функция `doLogin` реализует локальную часть бизнес-логики модуля.
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
@@ -307,6 +315,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     await refreshMe();
   };
 
+  // Функция `logout` реализует локальную часть бизнес-логики модуля.
   const logout = async () => {
     if (me?.id != null) {
       await syncManagerWorkTotalToServer(me.id);
@@ -315,6 +324,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     setMe(null);
   };
 
+  // Функция `toggleReception` реализует локальную часть бизнес-логики модуля.
   const toggleReception = async () => {
     if (!me) return;
     const isOpenNow = !(me.reception_open === false || me.reception_open === 0);
@@ -330,12 +340,14 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     await refreshMe();
   };
 
+  // Функция `callNext` реализует локальную часть бизнес-логики модуля.
   const callNext = async () => {
     const res = await fetchJSON("/api/tickets/call-next", { method: "POST" });
     const js = await readJSON<any>(res);
     if (!res.ok) alert(js?.error || "Не удалось вызвать");
   };
 
+  // Функция `callBooked` реализует локальную часть бизнес-логики модуля.
   const callBooked = async (ticketId: number) => {
     setRowCallLoading(ticketId);
     try {
@@ -347,6 +359,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     }
   };
 
+  // Функция `callToMyDesk` реализует локальную часть бизнес-логики модуля.
   const callToMyDesk = async (ticketId: number) => {
     setRowCallLoading(ticketId);
     try {
@@ -373,6 +386,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     localStorage.setItem(`uniq.manager.autoCallAfterDone.${me.id}`, autoCallAfterDone ? "1" : "0");
   }, [me?.id, autoCallAfterDone]);
 
+  // Функция `updateTicket` реализует локальную часть бизнес-логики модуля.
   const updateTicket = async (ticketId: number, patch: Partial<Ticket>) => {
     const res = await fetchJSON(`/api/tickets/${ticketId}`, {
       method: "PATCH",
@@ -385,6 +399,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     }
   };
 
+  // Функция `fetchHistory` реализует локальную часть бизнес-логики модуля.
   const fetchHistory = async () => {
     setHistoryLoading(true);
     const q = new URLSearchParams({ limit: "200", date: historyDate });
@@ -398,6 +413,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     setHistoryRows(Array.isArray(js?.rows) ? js.rows : []);
   };
 
+  // Функция `reopenHistoryTicket` реализует локальную часть бизнес-логики модуля.
   const reopenHistoryTicket = async (ticketId: number, action: "queue" | "service" | "comment") => {
     const res = await fetchJSON(`/api/tickets/${ticketId}/reopen`, {
       method: "POST",
@@ -502,6 +518,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyOpen, historyDate]);
 
+  // Функция `wordCount` реализует локальную часть бизнес-логики модуля.
   function wordCount(text: string): number {
     return text
       .trim()
@@ -509,12 +526,14 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
       .filter(Boolean).length;
   }
 
+  // Функция `clampTo300Words` реализует локальную часть бизнес-логики модуля.
   function clampTo300Words(text: string): string {
     const parts = text.trim().split(/\s+/).filter(Boolean);
     if (parts.length <= 300) return text;
     return parts.slice(0, 300).join(" ");
   }
 
+  // Функция `submitComplete` реализует локальную часть бизнес-логики модуля.
   const submitComplete = async () => {
     if (!activeTicket || activeTicket.status !== "IN_SERVICE") return;
     const okCat = Boolean(inServiceCategory);
@@ -569,6 +588,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     reader.readAsDataURL(f);
   };
 
+  // Функция `caseTypeRu` реализует локальную часть бизнес-логики модуля.
   function caseTypeRu(caseType: string | null | undefined): string {
     if (caseType === "ACADEMIC") return "Академическая";
     if (caseType === "FINANCIAL") return "Финансовые";
@@ -581,6 +601,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     return "—";
   }
 
+  // Функция `statusRu` реализует локальную часть бизнес-логики модуля.
   function statusRu(status: string | null | undefined): string {
     if (status === "DONE") return "Обслужен";
     if (status === "MISSED") return "Пропущен";
@@ -591,6 +612,7 @@ export default function AdvisorPage({ managerDark, setManagerDark }: Props) {
     return status || "—";
   }
 
+  // Функция `timeHHMM` реализует локальную часть бизнес-логики модуля.
   function timeHHMM(dt: string | null | undefined): string {
     const d = parseBackendDateTime(dt ?? undefined);
     if (!d) return "—";

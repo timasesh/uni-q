@@ -17,6 +17,7 @@ from event_store.message_store import (
 from event_store.types import JSON
 
 
+# Класс `PandasRecordNamedTuple` инкапсулирует связанную бизнес-логику.
 class PandasRecordNamedTuple(NamedTuple):
     stream: str
     type: str
@@ -28,7 +29,9 @@ class PandasRecordNamedTuple(NamedTuple):
     time: datetime
 
 
+# Класс `MessageStorePandas` инкапсулирует связанную бизнес-логику.
 class MessageStorePandas(MessageStore):
+    # Функция `__init__` реализует локальную часть бизнес-логики модуля.
     def __init__(
         self,
         json_dumps: Optional[Callable[[Any], str]] = None,
@@ -39,6 +42,7 @@ class MessageStorePandas(MessageStore):
         self._json_dumps = json_dumps or partial(simplejson.dumps, use_decimal=True)
         self._json_loads = json_loads or partial(simplejson.loads, use_decimal=True)
 
+    # Функция `_msg_from_record` реализует локальную часть бизнес-логики модуля.
     def _msg_from_record(
         self, record: Union[pandas.Series, PandasRecordNamedTuple]
     ) -> Message:

@@ -46,16 +46,19 @@ const EMPTY_STUDENT_FORM: StudentForm = {
   studyDurationYears: "",
 };
 
+// Функция `useLocalTicketId` реализует локальную часть бизнес-логики модуля.
 function useLocalTicketId() {
   const [id, setId] = useState<number | null>(() => {
     const v = localStorage.getItem("uniq.ticketId");
     const n = v ? Number(v) : NaN;
     return Number.isFinite(n) ? n : null;
   });
+  // Функция `save` реализует локальную часть бизнес-логики модуля.
   const save = (next: number) => {
     localStorage.setItem("uniq.ticketId", String(next));
     setId(next);
   };
+  // Функция `clear` реализует локальную часть бизнес-логики модуля.
   const clear = () => {
     localStorage.removeItem("uniq.ticketId");
     setId(null);
@@ -63,6 +66,7 @@ function useLocalTicketId() {
   return { id, save, clear };
 }
 
+// Функция `StudentPage` реализует локальную часть бизнес-логики модуля.
 export default function StudentPage() {
   const { t } = useI18n();
   const { id: ticketId, save: saveTicketId, clear: clearTicketId } = useLocalTicketId();
@@ -110,6 +114,7 @@ export default function StudentPage() {
 
   const [form, setForm] = useState<StudentForm>(EMPTY_STUDENT_FORM);
 
+  // Функция `persistLastResult` реализует локальную часть бизнес-логики модуля.
   const persistLastResult = (ticket: Ticket | null | undefined) => {
     if (!ticket || ticket.status !== "DONE") return;
     const hasPayload = Boolean(ticket.student_comment || ticket.comment || ticket.manager_attachment_data_url);
@@ -273,6 +278,7 @@ export default function StudentPage() {
   }, [ticketId, schoolApi, form.specialtyCode, form.languageSection, form.course, form.studyDurationYears, liveQueueEpoch]);
 
   useEffect(() => {
+    // Функция `onStorage` реализует локальную часть бизнес-логики модуля.
     const onStorage = () => {
       setSchemeFeatureEnabled(localStorage.getItem(OFFICE_SCHEME_FEATURE_ENABLED_KEY) === "1");
     };
@@ -441,6 +447,7 @@ export default function StudentPage() {
     return true;
   }
 
+  // Функция `submit` реализует локальную часть бизнес-логики модуля.
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormComplete) return;
@@ -464,6 +471,7 @@ export default function StudentPage() {
     setBookingHm((prev) => (prev && bookingOptions.includes(prev) ? prev : bookingOptions[0] ?? ""));
   }, [bookingOpen, bookingOptions]);
 
+  // Функция `submitBooking` реализует локальную часть бизнес-логики модуля.
   const submitBooking = async () => {
     if (!bookingHm.trim()) {
       alert(t("bookingNoSlots"));
@@ -477,6 +485,7 @@ export default function StudentPage() {
     await postTicket(iso);
   };
 
+  // Функция `cancel` реализует локальную часть бизнес-логики модуля.
   const cancel = async () => {
     if (!myTicket) return;
     const res = await fetchJSON(`/api/tickets/${myTicket.id}/cancel`, { method: "POST" });
@@ -495,6 +504,7 @@ export default function StudentPage() {
     setMyTicket(null);
   };
 
+  // Функция `submitReview` реализует локальную часть бизнес-логики модуля.
   const submitReview = async () => {
     if (!myTicket) return;
     if (reviewSubmitting) return;
@@ -528,6 +538,7 @@ export default function StudentPage() {
     void refreshTicket(myTicket.id);
   };
 
+  // Функция `skipReview` реализует локальную часть бизнес-логики модуля.
   const skipReview = () => {
     persistLastResult(myTicket);
     setReviewDismissed(true);

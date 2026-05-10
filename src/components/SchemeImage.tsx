@@ -8,6 +8,7 @@ type Props = {
   alt?: string;
 };
 
+// Функция `SchemeImage` реализует локальную часть бизнес-логики модуля.
 export default function SchemeImage({ windowNumber, className, alt = "" }: Props) {
   const paths = useMemo(() => {
     if (windowNumber != null) return schemeImagePathsForWindow(windowNumber);

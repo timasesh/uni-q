@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -n \"stats/queues\\\\|linkTo.*queues\\\\|navigate.*queues\" \"c:\\\\\\\\Users\\\\\\\\Сабит\\\\\\\\Desktop\\\\\\\\uni-q\\\\\\\\src\\\\\\\\admin\\\\\\\\AdminApp.tsx\")"
-    ]
-  }
-}

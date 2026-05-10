@@ -2,12 +2,14 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
 
+// Функция `hasLocalTicket` проверяет условие и возвращает булев результат.
 function hasLocalTicket() {
   const v = localStorage.getItem("uniq.ticketId");
   const n = v ? Number(v) : NaN;
   return Number.isFinite(n) && n > 0;
 }
 
+// Функция `StudentEntryPage` реализует локальную часть бизнес-логики модуля.
 export default function StudentEntryPage() {
   const { t } = useI18n();
   const nav = useNavigate();

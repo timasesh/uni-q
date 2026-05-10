@@ -9,11 +9,14 @@ const STUDENT_LANG_KEY = "uniq.student.lang";
 const LEGACY_LANG_KEY = "uniq.uiLang";
 const EVT = "uniq-ui-lang-change";
 
+// Функция `managerLangKey` реализует локальную часть бизнес-логики модуля.
 function managerLangKey(id: number) {
   return `uniq.manager.lang.${id}`;
 }
+// Функция `LEGACY_MANAGER_LANG_KEY` реализует локальную часть бизнес-логики модуля.
 const LEGACY_MANAGER_LANG_KEY = (id: number) => `uniq.advisor.lang.${id}`;
 
+// Функция `adminLangKey` реализует локальную часть бизнес-логики модуля.
 function adminLangKey(id: number) {
   return `uniq.admin.lang.${id}`;
 }
@@ -1157,6 +1160,7 @@ const dict: Record<Lang, Record<string, string>> = {
   },
 };
 
+// Функция `resolveLang` реализует локальную часть бизнес-логики модуля.
 function resolveLang(pathname: string, managerId: number | null, adminId: number | null): Lang {
   const isAdmin = pathname.startsWith("/admin");
   if (isAdmin && adminId != null) return getAdminLang(adminId);
@@ -1182,7 +1186,9 @@ export function useI18n() {
   );
 
   useEffect(() => {
+    // Функция `bump` реализует локальную часть бизнес-логики модуля.
     const bump = () => setTick((x) => x + 1);
+    // Функция `onStorage` реализует локальную часть бизнес-логики модуля.
     const onStorage = () => bump();
     window.addEventListener("storage", onStorage);
     window.addEventListener(EVT, bump as EventListener);
@@ -1192,6 +1198,7 @@ export function useI18n() {
     };
   }, []);
 
+  // Функция `setLang` обновляет состояние или параметр в текущем контексте.
   const setLang = (next: Lang) => {
     const isAdmin = loc.pathname.startsWith("/admin");
     if (isAdmin && adminId != null) setAdminLang(adminId, next);
@@ -1199,6 +1206,7 @@ export function useI18n() {
     else setStudentLang(next);
   };
 
+  // Функция `t` реализует локальную часть бизнес-логики модуля.
   const t = (key: string) => dict[lang][key] ?? key;
   return { lang, t, setLang };
 }

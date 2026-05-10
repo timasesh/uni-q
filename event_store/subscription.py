@@ -24,7 +24,9 @@ from event_store.message_store import MessageStore
 logger = logging.getLogger(__name__)
 
 
+# Класс `Handler` инкапсулирует связанную бизнес-логику.
 class Handler(ABC):
+    # Функция `__init__` реализует локальную часть бизнес-логики модуля.
     def __init__(self, message_store: MessageStore) -> None:
         self.message_store = message_store
         self._handlers_mapping = self.get_handlers()
@@ -37,9 +39,11 @@ class Handler(ABC):
         await handler(message=message)
 
     @abstractmethod
+    # Функция `get_handlers` получает и возвращает вычисленные/запрошенные данные.
     def get_handlers(self) -> Dict[Any, Callable]:
         raise NotImplementedError
 
+    # Функция `get_handler` получает и возвращает вычисленные/запрошенные данные.
     def get_handler(self, message: Message) -> Optional[Callable]:
         factory = BuildOptionalTypesFromMessageFactory(
             expected_types=set(self._handlers_mapping.keys())
@@ -59,7 +63,9 @@ HandlersMapping = Mapping[
 ]
 
 
+# Класс `Subscription` инкапсулирует связанную бизнес-логику.
 class Subscription:
+    # Функция `__init__` реализует локальную часть бизнес-логики модуля.
     def __init__(
         self,
         message_store: "MessageStore",
@@ -87,9 +93,11 @@ class Subscription:
         self._is_category = message_store.is_category(stream_or_category)
         self._async_sleep = async_sleep or asyncio.sleep
 
+    # Функция `is_running` проверяет условие и возвращает булев результат.
     def is_running(self) -> bool:
         return self._keep_going
 
+    # Функция `_check_origin_match` реализует локальную часть бизнес-логики модуля.
     def _check_origin_match(self, message: Message) -> bool:
         if self._origin_stream_name is None:
             return True
@@ -165,6 +173,7 @@ class Subscription:
         self._keep_going = True
         await self._poll()
 
+    # Функция `stop` реализует локальную часть бизнес-логики модуля.
     def stop(self) -> None:
         self._keep_going = False
 
@@ -193,11 +202,13 @@ class Subscription:
             self._messages_since_last_pos_write = 0
             await self._write_position(position)
 
+    # Функция `__repr__` реализует локальную часть бизнес-логики модуля.
     def __repr__(self) -> str:
         return (
             f'Subscription(stream_or_category="{self._stream_or_category}", '
             f'handler={self._handler}, subscriber_id="{self._subscriber_id}")'
         )
 
+    # Функция `__str__` реализует локальную часть бизнес-логики модуля.
     def __str__(self) -> str:
         return self.__repr__()

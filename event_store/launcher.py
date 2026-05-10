@@ -6,11 +6,13 @@ from event_store.message_store import MessageStore
 from event_store.subscription import Subscription
 
 
+# Класс `Launcher` инкапсулирует связанную бизнес-логику.
 class Launcher(ABC):
     message_store: MessageStore
     db_session: Optional[DbSession]
     subscriptions: Sequence[Subscription]
 
+    # Функция `__init__` реализует локальную часть бизнес-логики модуля.
     def __init__(
         self,
         message_store: MessageStore,
@@ -21,6 +23,7 @@ class Launcher(ABC):
         self.init_subscriptions()
 
     @abstractmethod
+    # Функция `init_subscriptions` реализует локальную часть бизнес-логики модуля.
     def init_subscriptions(self) -> None:
         pass  # pragma: no cover
 
@@ -29,5 +32,6 @@ class Launcher(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
+    # Функция `stop` реализует локальную часть бизнес-логики модуля.
     def stop(self) -> None:
         pass  # pragma: no cover

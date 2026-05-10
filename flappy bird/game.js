@@ -70,10 +70,12 @@ bgMusic.volume = 0.25;
 bgMusic.preload = 'auto';
 bgMusic.setAttribute('playsinline', 'true');
 let _bgMusicUnlocked = false;
+// Функция `playBackgroundMusic` реализует локальную часть бизнес-логики модуля.
 function playBackgroundMusic() {
   if (isMuted) return;
   bgMusic.play().catch(() => {});
 }
+// Функция `_unlockBgMusic` реализует локальную часть бизнес-логики модуля.
 function _unlockBgMusic() {
   _bgMusicUnlocked = true;
   playBackgroundMusic();
@@ -139,6 +141,7 @@ function getAudio() {
   return audioCtx;
 }
 
+// Функция `playSweep` реализует локальную часть бизнес-логики модуля.
 function playSweep(f1, f2, dur, type, gain) {
   if (isMuted) return;
   try {
@@ -155,6 +158,7 @@ function playSweep(f1, f2, dur, type, gain) {
   } catch(e) {}
 }
 
+// Функция `playTone` реализует локальную часть бизнес-логики модуля.
 function playTone(freq, dur, gain) {
   if (isMuted) return;
   try {
@@ -170,6 +174,7 @@ function playTone(freq, dur, gain) {
   } catch(e) {}
 }
 
+// Функция `playSound` реализует локальную часть бизнес-логики модуля.
 function playSound(type) {
   switch(type) {
     case 'jump':        playSweep(200, 400, 0.1, 'sine', 0.2); break;
@@ -189,6 +194,7 @@ const SVG_SOUND_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="non
 const SVG_PAUSE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
 const SVG_PLAY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 
+// Функция `toggleMute` реализует локальную часть бизнес-логики модуля.
 function toggleMute() {
   isMuted = !isMuted;
   bgMusic.muted = isMuted;
@@ -253,6 +259,7 @@ function drawBackground() {
 
 }
 
+// Функция `drawBuildingImage` реализует локальную часть бизнес-логики модуля.
 function drawBuildingImage() {
   if (!bgImage.complete || !bgImage.naturalWidth) return;
 
@@ -281,6 +288,7 @@ function drawPipe(pipe) {
 
 }
 
+// Функция `drawDocumentStack` реализует локальную часть бизнес-логики модуля.
 function drawDocumentStack(x, y, w, h, isTop) {
   if (h <= 0) return;
   const layers = Math.max(1, Math.floor(h / 18));
@@ -478,6 +486,7 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
+// Функция `drawFloatingTexts` реализует локальную часть бизнес-логики модуля.
 function drawFloatingTexts() {
   floatingTexts = floatingTexts.filter(t => t.life > 0);
   floatingTexts.forEach(t => {
@@ -495,6 +504,7 @@ function drawFloatingTexts() {
   });
 }
 
+// Функция `addParticles` реализует локальную часть бизнес-логики модуля.
 function addParticles(x, y) {
   for (let i = 0; i < 22; i++) {
     const angle = -(0.08 + Math.random() * 0.84) * Math.PI;
@@ -517,6 +527,7 @@ function addParticles(x, y) {
 // ===== CONFETTI =====
 const CONFETTI_COLORS = ['#FFD700','#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD'];
 
+// Функция `spawnConfetti` реализует локальную часть бизнес-логики модуля.
 function spawnConfetti() {
   const count = 80 + Math.floor(Math.random() * 21);
   for (let i = 0; i < count; i++) {
@@ -534,6 +545,7 @@ function spawnConfetti() {
   }
 }
 
+// Функция `drawConfetti` реализует локальную часть бизнес-логики модуля.
 function drawConfetti() {
   confetti = confetti.filter(c => c.life > 0 && c.y < H + 20);
   confetti.forEach(c => {
@@ -565,6 +577,7 @@ function addScorePopup(x, y) {
   });
 }
 
+// Функция `drawHUD` реализует локальную часть бизнес-логики модуля.
 function drawHUD() {
   if (gameState !== 'playing') return;
 
@@ -583,6 +596,7 @@ function drawHUD() {
   }
 }
 
+// Функция `drawReadyHint` реализует локальную часть бизнес-логики модуля.
 function drawReadyHint() {
   const alpha = 0.4 + Math.sin(frame * 0.08) * 0.4;
   ctx.globalAlpha = alpha;
@@ -624,6 +638,7 @@ function spawnPipe() {
   }
 }
 
+// Функция `updatePipes` реализует локальную часть бизнес-логики модуля.
 function updatePipes() {
   const now = Date.now();
   if (now - lastPipe > PIPE_INTERVAL) {
@@ -700,6 +715,7 @@ function updatePipes() {
   if (player.y + player.h >= H - 60 || player.y <= 0) die();
 }
 
+// Функция `die` реализует локальную часть бизнес-логики модуля.
 function die() {
   addParticles(player.x + player.w/2, player.y + player.h/2);
   if (!player.alive) return;
@@ -713,6 +729,7 @@ function die() {
   isDying = true;
 }
 
+// Функция `showGameOver` реализует локальную часть бизнес-логики модуля.
 function showGameOver() {
   document.getElementById('score').style.display = 'none';
   document.getElementById('queueStatus').style.display = 'none';
@@ -756,6 +773,7 @@ function showGameOver() {
   document.getElementById('gameOverScreen').style.display = 'flex';
 }
 
+// Функция `startGame` реализует локальную часть бизнес-логики модуля.
 function startGame() {
   document.getElementById('startScreen').style.display = 'none';
   document.getElementById('gameOverScreen').style.display = 'none';
@@ -784,6 +802,7 @@ function startGame() {
   if (_bgMusicUnlocked) playBackgroundMusic();
 }
 
+// Функция `goToMainMenu` реализует локальную часть бизнес-логики модуля.
 function goToMainMenu() {
   document.getElementById('gameOverScreen').style.display = 'none';
   document.getElementById('pauseScreen').style.display = 'none';
@@ -805,6 +824,7 @@ function goToMainMenu() {
   gameState = 'start';
 }
 
+// Функция `continueByCoin` реализует локальную часть бизнес-логики модуля.
 function continueByCoin() {
   if (totalCoins < 5) return;
   totalCoins -= 5;

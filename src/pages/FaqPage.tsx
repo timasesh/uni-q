@@ -8,6 +8,7 @@ import { cn } from "../lib/cn";
 import { SCHEME_WINDOW_COUNT } from "../lib/deskWindow";
 import SchemeImage from "../components/SchemeImage";
 
+// Функция `FaqPage` реализует локальную часть бизнес-логики модуля.
 export default function FaqPage() {
   const { t, lang } = useI18n();
   const sections = getFaqSections(lang);
@@ -20,11 +21,13 @@ export default function FaqPage() {
     if (!hasTicket) void postStatsEvent("faq_no_queue");
   }, []);
 
+  // Функция `toggleSection` реализует локальную часть бизнес-логики модуля.
   const toggleSection = (si: number) => {
     setOpenSection((prev) => (prev === si ? null : si));
     setOpenQuestion(null);
   };
 
+  // Функция `toggleQuestion` реализует локальную часть бизнес-логики модуля.
   const toggleQuestion = (si: number, qi: number) => {
     const id = `${si}-${qi}`;
     setOpenQuestion((prev) => (prev === id ? null : id));

@@ -21,6 +21,7 @@ from event_store.message_store import (
 from event_store.types import JSON
 
 
+# Класс `_PgMessageDbProcs` инкапсулирует связанную бизнес-логику.
 class _PgMessageDbProcs:
     acquire_lock = "SELECT acquire_lock($1);"
     write_message = "SELECT write_message($1, $2, $3, $4, $5, $6);"
@@ -31,7 +32,9 @@ class _PgMessageDbProcs:
     get_version = "SELECT message_store_version();"
 
 
+# Класс `MessageStoreAsyncpg` инкапсулирует связанную бизнес-логику.
 class MessageStoreAsyncpg(MessageStore):
+    # Функция `__init__` реализует локальную часть бизнес-логики модуля.
     def __init__(
         self,
         dsn: str,
@@ -53,6 +56,7 @@ class MessageStoreAsyncpg(MessageStore):
         self._json_loads = json_loads or partial(simplejson.loads, use_decimal=True)
 
     @classmethod
+    # Функция `from_uri` реализует локальную часть бизнес-логики модуля.
     def from_uri(cls, uri: str) -> "MessageStoreAsyncpg":
         psycopg_prefix = "postgresql+psycopg2"
         if uri.startswith(psycopg_prefix):
@@ -60,13 +64,16 @@ class MessageStoreAsyncpg(MessageStore):
         return cls(dsn=uri)
 
     @property
+    # Функция `_connected` реализует локальную часть бизнес-логики модуля.
     def _connected(self) -> bool:
         return self._pool is not None and not self._pool._closed
 
+    # Функция `_require_connection` реализует локальную часть бизнес-логики модуля.
     def _require_connection(self) -> None:
         if not self._connected:
             raise InterfaceNotConnectedError()
 
+    # Функция `_msg_from_record` реализует локальную часть бизнес-логики модуля.
     def _msg_from_record(self, record: Record) -> Message:
         return Message(
             stream=record["stream_name"],

@@ -234,6 +234,7 @@ CREATE TABLE IF NOT EXISTS chat_feedback (
 );
 `);
 
+/** Идемпотентно доводит SQLite-схему до актуальной версии: добавляет колонки и таблицы, делает backfill истории. */
 function migrateDb() {
   const ticketCols = db.prepare("PRAGMA table_info(tickets)").all() as { name: string }[];
   const ticketNames = new Set(ticketCols.map((c) => c.name));
@@ -349,6 +350,7 @@ function migrateDb() {
   }
 }
 
+/** Гарантирует базовую строку состояния сессии очереди (queue_session id=1). */
 function ensureSeed() {
   // По умолчанию сотрудников не создаём. Создание — только через админ-панель.
   const s = db.prepare("SELECT 1 as ok FROM queue_session WHERE id = 1").get() as { ok: 1 } | undefined;
@@ -357,7 +359,9 @@ function ensureSeed() {
 ensureSeed();
 migrateDb();
 
+/** Создает дефолтных администраторов, если их еще нет в таблице admin_users. */
 function ensureAdminSeed() {
+  /** Внутренний helper: upsert-подобное создание админа по логину. */
   const ensureAdmin = (login: string, password: string, name: string) => {
     const has = db
       .prepare("SELECT 1 as ok FROM admin_users WHERE login = ?")
@@ -377,7 +381,9 @@ function ensureAdminSeed() {
 }
 ensureAdminSeed();
 
+/** Создает стартовых менеджеров (advisors) для пустой БД, без дублирования существующих записей. */
 function ensureManagerSeed() {
+  /** Внутренний helper: добавляет менеджера с дефолтной зоной приема и хэшированным паролем. */
   const ensureManager = (login: string, password: string, name: string) => {
     const has = db.prepare("SELECT 1 as ok FROM advisors WHERE login = ?").get(login) as { ok: 1 } | undefined;
     if (has) return;
@@ -403,6 +409,7 @@ let pgCoreSyncTimer: NodeJS.Timeout | null = null;
 let pgCoreSyncRunning = false;
 let pgCoreSyncPending = false;
 
+/** Планирует батчевую синхронизацию SQLite -> PostgreSQL и схлопывает частые изменения в один прогон. */
 function schedulePgCoreSync() {
   if (!isPgCoreEnabled()) return;
   pgCoreSyncPending = true;
@@ -424,6 +431,7 @@ function schedulePgCoreSync() {
   }, 250);
 }
 
+/** Форсирует немедленный flush текущего снимка core-данных в PostgreSQL (используется на shutdown). */
 async function flushPgCoreSyncNow() {
   if (!isPgCoreEnabled()) return;
   if (pgCoreSyncTimer) {
@@ -439,6 +447,7 @@ async function flushPgCoreSyncNow() {
   }
 }
 
+/** Считает количество слов в тексте для аналитики/валидации пользовательских полей. */
 function countWords(text: string | null | undefined): number {
   return String(text || "")
     .trim()
@@ -456,6 +465,7 @@ function deskWindowFromDb(raw: string | null | undefined): number | null {
   return n;
 }
 
+/** Middleware защиты менеджерских API: нормализует legacy session key advisorId -> managerId и проверяет авторизацию. */
 function requireManager(req: express.Request, res: express.Response, next: express.NextFunction) {
   const s = req.session as any;
   let managerId = s.managerId as number | undefined;
@@ -468,12 +478,14 @@ function requireManager(req: express.Request, res: express.Response, next: expre
   next();
 }
 
+/** Middleware защиты админских API: пропускает только при наличии adminId в сессии. */
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const adminId = (req.session as any).adminId as number | undefined;
   if (!adminId) return res.status(401).json({ error: "Нет доступа администратора" });
   next();
 }
 
+/** Возвращает текущее состояние работы очереди (включена/выключена запись). */
 function getQueueSession() {
   const row = db
     .prepare("SELECT id, is_active, created_at FROM queue_session WHERE id = 1")
@@ -481,15 +493,18 @@ function getQueueSession() {
   return { id: row.id, is_active: Boolean(row.is_active), created_at: row.created_at };
 }
 
+/** Генерирует следующий номер талона на основе максимального queue_number в tickets. */
 function nextQueueNumber(): number {
   const row = db.prepare("SELECT COALESCE(MAX(queue_number), 0) as m FROM tickets").get() as { m: number };
   return row.m + 1;
 }
 
+/** Форматирует номер талона в трехзначный вид (например, 7 -> "007"). */
 function formatQueueNumber(n: number): string {
   return String(n).padStart(3, "0");
 }
 
+/** Копирует завершенный/пропущенный талон в журнал визитов и отправляет событие в PG-историю. */
 function insertVisitLogFromTicket(t: any, isRepeat: number) {
   db.prepare(
     `INSERT INTO ticket_visit_log (
@@ -522,6 +537,7 @@ function insertVisitLogFromTicket(t: any, isRepeat: number) {
   fireVisitLogInsertPg(t as Record<string, unknown>, isRepeat);
 }
 
+/** Безопасно считает разницу между двумя timestamp в минутах, отбрасывая некорректные/отрицательные интервалы. */
 function minutesBetweenTimestamps(a: unknown, b: unknown): number | null {
   const t0 = backendInstantMs(a);
   const t1 = backendInstantMs(b);
@@ -532,6 +548,7 @@ function minutesBetweenTimestamps(a: unknown, b: unknown): number | null {
   return Math.round(mins);
 }
 
+/** Проверяет, можно ли переоткрыть визит из истории: только DONE/MISSED и в пределах 60 минут после закрытия. */
 function reopenEligibleForLogRow(logFinishedAt: unknown, ticketRow: { status?: string; finished_at?: unknown } | undefined): number {
   if (!ticketRow) return 0;
   const st = String(ticketRow.status || "");
@@ -545,6 +562,7 @@ function reopenEligibleForLogRow(logFinishedAt: unknown, ticketRow: { status?: s
   return mins <= 60 && mins >= 0 ? 1 : 0;
 }
 
+/** Валидирует входной параметр даты в формате YYYY-MM-DD для отчетных API. */
 function parseYmdParam(s: string): string | null {
   const t = String(s || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
@@ -552,6 +570,7 @@ function parseYmdParam(s: string): string | null {
 
 const ADMIN_STATS_PG_TIMEOUT_MS = Number(process.env.ADMIN_STATS_PG_TIMEOUT_MS || 1800);
 
+/** Обертка для Promise с таймаутом: ограничивает ожидание внешних источников (обычно PostgreSQL). */
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   try {
@@ -566,6 +585,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
+/** "Быстрый" вызов PG: при timeout/ошибке возвращает null, чтобы endpoint мог сделать fallback на SQLite. */
 async function fastPg<T>(label: string, run: () => Promise<T>): Promise<T | null> {
   try {
     return await withTimeout(run(), ADMIN_STATS_PG_TIMEOUT_MS, label);
@@ -575,6 +595,7 @@ async function fastPg<T>(label: string, run: () => Promise<T>): Promise<T | null
   }
 }
 
+/** Извлекает числовой курс (1..4) из строковых значений вида "1 курс", "course 2". */
 function parseCourse(course: string | null | undefined): number | null {
   if (!course) return null;
   const m = String(course).match(/\d+/);
@@ -619,6 +640,7 @@ function pickRouteAdvisorIdForTicket(ticket: any, advisorRows: any[]): number | 
   return best;
 }
 
+/** Возвращает всех менеджеров, которым талон должен быть виден по зонам приема (для UI-подсветки пересечений). */
 function visibleAdvisorIdsForTicket(ticket: any, advisorRows: any[]): number[] {
   const ids: number[] = [];
   for (const a of advisorRows) {
@@ -639,6 +661,7 @@ function visibleAdvisorIdsForTicket(ticket: any, advisorRows: any[]): number[] {
   return ids;
 }
 
+/** Доинициализирует route_advisor_id для WAITING-талонов, у которых владелец еще не рассчитан. */
 function ensureRouteOwnersForWaitingTickets() {
   const waiting = db.prepare("SELECT id, school, language_section, course, specialty_code, study_duration_years FROM tickets WHERE status = 'WAITING' AND route_advisor_id IS NULL").all() as any[];
   if (waiting.length === 0) return;
@@ -650,6 +673,7 @@ function ensureRouteOwnersForWaitingTickets() {
   }
 }
 
+/** Полностью пересчитывает route_advisor_id для всех WAITING-талонов после изменения зон/правил маршрутизации. */
 function recomputeRouteOwnersForWaitingTickets() {
   const waiting = db
     .prepare("SELECT id, school, language_section, course, specialty_code, study_duration_years FROM tickets WHERE status = 'WAITING'")
@@ -669,6 +693,7 @@ type SchoolScopedFilters = {
   specialtyCodes: string[] | null;
 };
 
+/** Парсит JSON "тонкой" фильтрации по школам (язык/курс/спец/длительность) в нормализованную структуру. */
 function parseSchoolScopedFilters(raw: string | null | undefined): Record<string, SchoolScopedFilters> {
   const out: Record<string, SchoolScopedFilters> = {};
   if (!raw) return out;
@@ -700,7 +725,9 @@ function parseSchoolScopedFilters(raw: string | null | undefined): Record<string
   return out;
 }
 
+/** Главная проверка совместимости талона и зоны менеджера (школа, язык, курс, спецкод, длительность). */
 function ticketMatchesScope(ticket: any, scope: AdvisorScope): boolean {
+  /** Нормализует строку для устойчивого сравнения независимо от регистра и лишних пробелов. */
   const norm = (s: unknown) =>
     String(s ?? "")
       .trim()
@@ -828,6 +855,7 @@ function bookingCallableNow(preferred_slot_at: unknown, now: Date = new Date()):
   return t <= now.getTime();
 }
 
+/** Оценивает примерное ожидание нового талона по его "линии" (школа+язык+курс+спец). */
 function computeEstimatedMinutes(newTicket: any): number {
   const waiting = db
     .prepare("SELECT * FROM tickets WHERE status = 'WAITING' ORDER BY queue_number ASC")
@@ -846,6 +874,7 @@ function computeEstimatedMinutes(newTicket: any): number {
   return Math.max(3, sameLineAhead.length * 7);
 }
 
+/** Собирает snapshot живой очереди для HTTP и Socket.IO: сессия, активные талоны, форматированные поля, видимость менеджеров. */
 function getLiveQueue() {
   const sessionState = getQueueSession();
   const advisors = advisorsRowsForRouting();
@@ -876,6 +905,7 @@ function getLiveQueue() {
   };
 }
 
+/** Публикует актуальный snapshot очереди всем подключенным клиентам по событию queue:update. */
 function broadcastQueue() {
   io.emit("queue:update", getLiveQueue());
 }
@@ -1021,6 +1051,7 @@ const KB_RU_STOPWORDS = new Set([
   "пожалуйста",
 ]);
 
+/** Нормализует текст запроса/KB: lower-case, "ё"->"е", чистка пунктуации и лишних пробелов. */
 function normalizeKbText(v: string): string {
   return String(v || "")
     .toLowerCase()
@@ -1030,6 +1061,7 @@ function normalizeKbText(v: string): string {
     .trim();
 }
 
+/** Токенизирует текст для поиска по KB: отсеивает стоп-слова и слишком короткие токены. */
 function tokenizeKbText(v: string): Set<string> {
   const tokens = normalizeKbText(v)
     .split(" ")
@@ -1038,6 +1070,7 @@ function tokenizeKbText(v: string): Set<string> {
   return new Set(tokens);
 }
 
+/** Строит множество триграмм для fuzzy-сопоставления вопросов/ответов. */
 function trigramsKbText(v: string): Set<string> {
   const s = normalizeKbText(v).replace(/\s+/g, " ");
   if (s.length < 3) return new Set(s ? [s] : []);
@@ -1048,6 +1081,7 @@ function trigramsKbText(v: string): Set<string> {
   return out;
 }
 
+/** Загружает и кэширует Excel-базу знаний чата, подготавливая нормализованные поля для ранжирования. */
 function loadChatKb(): ChatKbEntry[] {
   const p = UNIQ_CHAT_KB_XLSX_PATH;
   if (!p || !fs.existsSync(p)) return [];
@@ -1102,6 +1136,7 @@ function loadChatKb(): ChatKbEntry[] {
   return out;
 }
 
+/** Считает релевантность текста к вопросу по token overlap и trigram similarity. */
 function scoreTextAgainst(
   userNorm: string,
   userTokens: Set<string>,
@@ -1134,11 +1169,13 @@ function scoreTextAgainst(
   return s;
 }
 
+/** Определяет, что пользователь спрашивает именно про местоположение/кабинет. */
 function isLocationCabinetQuery(text: string): boolean {
   const s = normalizeKbText(text);
   return /(где|кабинет|кабинете|адрес|расположен|находится|где находится|where|office|room)/iu.test(s);
 }
 
+/** Проверяет, содержит ли ответ конкретику по кабинету (например "кабинет 214"). */
 function answerHasCabinetInfo(answer: string): boolean {
   const s = normalizeKbText(answer);
   if (!s) return false;
@@ -1147,6 +1184,7 @@ function answerHasCabinetInfo(answer: string): boolean {
   return /кабинет/iu.test(s) && /\d{2,4}/.test(s);
 }
 
+/** Итоговый скор KB-элемента: вопрос приоритетнее, ответ учитывается как контекстный сигнал. */
 function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEntry): number {
   const questionScore = scoreTextAgainst(userNorm, userTokens, item.qNorm, item.qTokens, item.qTrigrams);
   const answerScore = scoreTextAgainst(userNorm, userTokens, item.aNorm, item.aTokens, item.aTrigrams);
@@ -1154,6 +1192,7 @@ function scoreKbEntry(userNorm: string, userTokens: Set<string>, item: ChatKbEnt
   return questionScore + answerScore * 0.6;
 }
 
+/** Строит карту бустов по лайкам/дизлайкам чата, чтобы адаптивно ранжировать KB-ответы. */
 function getChatFeedbackBoostMap(): Map<string, number> {
   const now = Date.now();
   if (chatFeedbackBoostCache && now - chatFeedbackBoostCache.atMs < 30_000) {
@@ -1182,12 +1221,14 @@ function getChatFeedbackBoostMap(): Map<string, number> {
   return map;
 }
 
+/** Считает пересечение двух token-set (метрика близости тем). */
 function tokenOverlapCount(a: Set<string>, b: Set<string>): number {
   let n = 0;
   for (const t of a) if (b.has(t)) n += 1;
   return n;
 }
 
+/** Быстрый retrieval top-N подходящих KB-записей для текущего вопроса пользователя. */
 function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   const entries = loadChatKb();
   if (entries.length === 0) return [];
@@ -1203,11 +1244,13 @@ function findKbMatches(userQuestion: string, limit: number): ChatKbEntry[] {
   return scored;
 }
 
+/** Возвращает последние N пользовательских реплик из диалога для контекстного поиска. */
 function getLastUserMessages(cleaned: { role: "user" | "assistant"; content: string }[], n = 2): string[] {
   const users = cleaned.filter((m) => m.role === "user").map((m) => m.content.trim()).filter(Boolean);
   return users.slice(-n);
 }
 
+/** Формирует поисковые запросы к KB: последний вопрос и при необходимости склейку с предыдущим. */
 function buildRetrievalQueries(cleaned: { role: "user" | "assistant"; content: string }[]): string[] {
   const users = getLastUserMessages(cleaned, 2);
   if (users.length === 0) return [];
@@ -1225,6 +1268,7 @@ function buildRetrievalQueries(cleaned: { role: "user" | "assistant"; content: s
   return Array.from(new Set(queries));
 }
 
+/** Определяет короткий follow-up (уточнение), а не новый самостоятельный вопрос. */
 function isFollowupUserQuestion(text: string): boolean {
   const s = String(text || "").trim();
   if (!s) return false;
@@ -1232,6 +1276,7 @@ function isFollowupUserQuestion(text: string): boolean {
   return tok <= 4 || /^(а|нет|то есть|т е|и|или|но|тогда|если|еще|ещ[её]|как это|что дальше|куда|где|когда)\b/iu.test(s);
 }
 
+/** Считает, сколько пользовательских сообщений прошло после заданного индекса в истории диалога. */
 function countUserTurnsAfterIndex(
   cleaned: { role: "user" | "assistant"; content: string; source?: string; kbQuestionNorm?: string }[],
   idxExclusive: number
@@ -1243,6 +1288,7 @@ function countUserTurnsAfterIndex(
   return n;
 }
 
+/** Выявляет явную смену темы относительно "якорного" KB-вопроса прошлого ответа. */
 function isStrongTopicSwitch(userText: string, anchor: ChatKbEntry | null): boolean {
   if (!anchor) return false;
   const userTokens = tokenizeKbText(userText);
@@ -1251,6 +1297,7 @@ function isStrongTopicSwitch(userText: string, anchor: ChatKbEntry | null): bool
   return overlap <= 1;
 }
 
+/** Политический фильтр: обнаруживает запросы на списывание/обход учебных правил. */
 function detectUnsafeAcademicCheating(text: string): boolean {
   const s = normalizeKbText(text);
   if (!s) return false;
@@ -1272,6 +1319,7 @@ type ChatIntent =
   | "academic_leave"
   | "other";
 
+/** Грубая intent-классификация вопроса (оплата, IT-доступ, GPA, ретейк и т.д.) для reranking. */
 function detectIntent(text: string): ChatIntent {
   const s = normalizeKbText(text);
   if (!s) return "other";
@@ -1291,6 +1339,7 @@ function detectIntent(text: string): ChatIntent {
   return "other";
 }
 
+/** Проверяет, является ли вопрос действительно новым, а не перефразировкой предыдущего. */
 function meaningfullyDifferentQuestion(a: string, b: string): boolean {
   const ta = tokenizeKbText(a);
   const tb = tokenizeKbText(b);
@@ -1300,6 +1349,7 @@ function meaningfullyDifferentQuestion(a: string, b: string): boolean {
   return ratio < 0.35;
 }
 
+/** Возвращает последний ответ ассистента из очищенной истории сообщений. */
 function getLastAssistantAnswer(cleaned: { role: "user" | "assistant"; content: string }[]): string | null {
   for (let i = cleaned.length - 1; i >= 0; i -= 1) {
     if (cleaned[i]?.role === "assistant") return String(cleaned[i]?.content || "");
@@ -1307,6 +1357,7 @@ function getLastAssistantAnswer(cleaned: { role: "user" | "assistant"; content: 
   return null;
 }
 
+/** Полный reranking KB-кандидатов: intent, continuity, feedback-bias и тематические штрафы/бусты. */
 function rankKbByQueries(
   queries: string[],
   continuity?: { category?: string; questionNorm?: string | null; topicLock?: boolean }
@@ -1589,12 +1640,14 @@ app.post("/api/student/chat/feedback", (req, res) => {
   res.json({ ok: true });
 });
 
+/** Декодирует base64url-часть JWT в строку JSON без верификации подписи. */
 function base64UrlDecodeToString(input: string): string {
   const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
   const b64 = (input + pad).replace(/-/g, "+").replace(/_/g, "/");
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
+/** Извлекает payload из JWT токена (только parse, без проверки валидности/подписи). */
 function parseJwtPayload(token: string): any | null {
   const parts = String(token || "").split(".");
   if (parts.length < 2) return null;
@@ -1605,6 +1658,7 @@ function parseJwtPayload(token: string): any | null {
   }
 }
 
+/** Делит full name на firstName/lastName для авто-предзаполнения студенской сессии. */
 function splitName(full: string): { firstName: string; lastName: string } {
   const s = String(full || "").trim().replace(/\s+/g, " ");
   if (!s) return { firstName: "", lastName: "" };
@@ -1613,6 +1667,7 @@ function splitName(full: string): { firstName: string; lastName: string } {
   return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
 }
 
+/** Собирает конфигурацию Microsoft OAuth из env и подставляет безопасные дефолты. */
 function microsoftOAuthConfig() {
   const tenant = String(process.env.MS_TENANT_ID || "common").trim() || "common";
   const clientId = String(process.env.MS_CLIENT_ID || "").trim();
@@ -1997,6 +2052,7 @@ app.get("/api/managers/me/history", requireManager, async (req, res) => {
   const dateQ = parseYmdParam(String(req.query.date || ""));
   const dayFilter = dateQ ?? (db.prepare(`SELECT date('now', 'localtime') AS d`).get() as { d: string }).d;
 
+  /** Fallback-выборка истории менеджера из локального SQLite, когда PG-история недоступна. */
   const advisorHistorySqlite = () =>
     db
       .prepare(
@@ -2244,6 +2300,7 @@ app.post("/api/tickets", (req, res) => {
     const d = new Date(raw);
     if (Number.isNaN(d.getTime())) return res.status(400).json({ error: "Некорректное время брони" });
     if (d.getTime() < Date.now() - 60_000) return res.status(400).json({ error: "Выберите время в будущем" });
+    /** Нормализует дату к началу суток, чтобы бронирование было только на "сегодня". */
     const startOf = (x: Date) => {
       const z = new Date(x);
       z.setHours(0, 0, 0, 0);
@@ -3136,6 +3193,7 @@ app.get("/api/admin/stats/load", requireAdmin, async (req, res) => {
   res.json({ year, month, daily, monthly });
 });
 
+/** Экранирует значение для semicolon-CSV (Excel-friendly), включая переносы и кавычки. */
 function csvCell(v: unknown): string {
   const s = String(v ?? "");
   if (/[;\r\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -3150,6 +3208,7 @@ app.get("/api/admin/visits/history", requireAdmin, async (req, res) => {
   if (from > to) return res.status(400).json({ error: "Дата «с» не может быть позже «по»" });
   const format = String(req.query.format || "json").toLowerCase();
 
+  /** Fallback-выборка журнала визитов из SQLite для админ-отчета. */
   const adminVisitsSqlite = () =>
     db
       .prepare(
@@ -3382,6 +3441,7 @@ if (NODE_ENV === "production") {
   }
 }
 
+/** Единая точка логирования при старте HTTP/Socket сервера и статуса внешних хранилищ. */
 const onListen = () => {
   console.log(`uni-q server listening on port ${PORT} (${NODE_ENV})`);
   console.log(`SQLite (очередь и талоны): ${path.resolve(SQLITE_PATH)}`);
@@ -3393,6 +3453,7 @@ const onListen = () => {
   }
 };
 
+/** Инициализирует двустороннюю стратегию persistence между SQLite и PostgreSQL на старте процесса. */
 async function bootstrapPersistence() {
   if (!isPgCoreEnabled()) return;
   try {
@@ -3436,6 +3497,7 @@ void (async () => {
   }
 })();
 
+/** Корректно завершает процесс: пытается выгрузить pending-снимок core-данных в PostgreSQL и выходит. */
 async function gracefulFlushAndExit(signal: string) {
   console.log(`[shutdown] ${signal}`);
   try {

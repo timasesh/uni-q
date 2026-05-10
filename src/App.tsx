@@ -15,6 +15,7 @@ import { useManagerContext } from "./context/ManagerContext";
 import ManagerWorkTimer from "./components/ManagerWorkTimer";
 import { AppLogo } from "./lib/brand";
 
+// Корневой компонент: настраивает тему, общий каркас интерфейса и маршрутизацию приложения.
 export default function App() {
   const loc = useLocation();
   const nav = useNavigate();
@@ -25,6 +26,7 @@ export default function App() {
 
   const [managerDark, setManagerDark] = useState(false);
 
+  // На страницах менеджера восстанавливает персональную тему из хранилища и переносит старый ключ advisor.
   useEffect(() => {
     if (!isManager || managerId == null) return;
     const k = `uniq.manager.theme.${managerId}`;
@@ -43,6 +45,7 @@ export default function App() {
     setManagerDark(v === "dark");
   }, [isManager, managerId]);
 
+  // Сохраняет тему менеджера при изменении контекста менеджера или состояния переключателя.
   useEffect(() => {
     if (!isManager || managerId == null) return;
     localStorage.setItem(`uniq.manager.theme.${managerId}`, managerDark ? "dark" : "light");
@@ -50,6 +53,7 @@ export default function App() {
 
   const applyManagerDark = isManager && managerId != null && managerDark;
 
+  // Применяет или убирает глобальный dark-класс для страниц менеджера (у admin отдельная логика стилей).
   useEffect(() => {
     const root = document.documentElement;
     if (isAdmin) return;
@@ -57,6 +61,7 @@ export default function App() {
     else root.classList.remove("dark");
   }, [applyManagerDark, isAdmin]);
 
+  // Переходит на маршрут мини-игры из элементов управления в шапке.
   const openGame = () => nav("/game");
 
   if (loc.pathname.startsWith("/admin")) {

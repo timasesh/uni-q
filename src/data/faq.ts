@@ -40,6 +40,7 @@ const SECTION_TITLES: Record<Lang, string[]> = {
   ],
 };
 
+// Функция `buildItems` реализует локальную часть бизнес-логики модуля.
 function buildItems(lang: Lang, sectionIndex: number) {
   const n = sectionIndex + 1;
   return Array.from({ length: 10 }, (_, qi) => {

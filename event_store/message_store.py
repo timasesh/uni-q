@@ -14,14 +14,17 @@ from event_store.message import Message
 from event_store.types import JSON
 
 
+# Класс `WrongExpectedVersion` инкапсулирует связанную бизнес-логику.
 class WrongExpectedVersion(Exception):
     pass
 
 
+# Класс `UniqueViolationError` инкапсулирует связанную бизнес-логику.
 class UniqueViolationError(Exception):
     pass
 
 
+# Класс `InterfaceNotConnectedError` инкапсулирует связанную бизнес-логику.
 class InterfaceNotConnectedError(Exception):
     pass
 
@@ -29,6 +32,7 @@ class InterfaceNotConnectedError(Exception):
 T_Aggregate = TypeVar("T_Aggregate", bound=Aggregate)
 
 
+# Класс `MessageStore` инкапсулирует связанную бизнес-логику.
 class MessageStore(ABC):
     DELIM = "-"  # stream = category + delim + stream-id
     ORIGIN_STREAM_NAME = "originStreamName"
@@ -42,20 +46,24 @@ class MessageStore(ABC):
             await self.stop()
 
     @classmethod
+    # Функция `category` реализует локальную часть бизнес-логики модуля.
     def category(cls, stream: str) -> str:
         return stream.split(cls.DELIM)[0]
 
     @classmethod
+    # Функция `is_category` проверяет условие и возвращает булев результат.
     def is_category(cls, stream: str) -> bool:
         return cls.DELIM not in stream
 
     @classmethod
+    # Функция `stream_id` реализует локальную часть бизнес-логики модуля.
     def stream_id(cls, stream: str) -> Optional[str]:
         if cls.DELIM not in stream:
             return None
         return stream.split(cls.DELIM, 1)[1]
 
     @classmethod
+    # Функция `_snapshot_stream_name` реализует локальную часть бизнес-логики модуля.
     def _snapshot_stream_name(cls, stream: str, aggregate: Aggregate) -> str:
         # abc-15D -> abc:snapshot_(get_aggregate_name())-15D
         category = cls.category(stream=stream)

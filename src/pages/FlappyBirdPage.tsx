@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { fetchJSON, readJSON } from "../api";
 import type { Ticket } from "../types";
 
+// Функция `FlappyBirdPage` реализует локальную часть бизнес-логики модуля.
 export default function FlappyBirdPage() {
   const nav = useNavigate();
 
   useEffect(() => {
     let stopped = false;
+    // Функция `poll` реализует локальную часть бизнес-логики модуля.
     const poll = async () => {
       const raw = localStorage.getItem("uniq.ticketId");
       const ticketId = raw ? Number(raw) : NaN;

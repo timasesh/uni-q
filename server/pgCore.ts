@@ -282,6 +282,7 @@ export async function pgCoreHasData(): Promise<boolean> {
   return checks.some((r) => Number(r.rows[0]?.c || 0) > 0);
 }
 
+// Функция `sqliteRows` реализует локальную часть бизнес-логики модуля.
 function sqliteRows(db: Database.Database, sql: string): any[] {
   return db.prepare(sql).all() as any[];
 }

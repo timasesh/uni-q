@@ -26,6 +26,7 @@ function safeParseArray<T = unknown>(raw: string | null | undefined): T[] {
   }
 }
 
+// Функция `normSchool` реализует локальную часть бизнес-логики модуля.
 function normSchool(s: unknown) {
   return String(s ?? "")
     .trim()
@@ -33,6 +34,7 @@ function normSchool(s: unknown) {
     .replace(/\s+/g, " ");
 }
 
+// Функция `parseCourse` реализует локальную часть бизнес-логики модуля.
 function parseCourse(course: string | null | undefined): number | null {
   if (!course) return null;
   const m = String(course).match(/\d+/);
@@ -48,6 +50,7 @@ type SchoolScopedFilters = {
   specialtyCodes: string[] | null;
 };
 
+// Функция `parseSchoolScopedFilters` реализует локальную часть бизнес-логики модуля.
 function parseSchoolScopedFilters(raw: string | null | undefined): Record<string, SchoolScopedFilters> {
   if (!raw) return {};
   try {

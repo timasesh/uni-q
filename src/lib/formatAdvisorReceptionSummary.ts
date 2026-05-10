@@ -18,24 +18,28 @@ const LANG_SHORT: Record<Lang, Record<string, string>> = {
   kaz: { ru: "Орыс", kz: "Қазақ", en: "Ағыл." },
 };
 
+// Функция `anyLanguageLabel` реализует локальную часть бизнес-логики модуля.
 function anyLanguageLabel(lang: Lang): string {
   if (lang === "eng") return "Any language";
   if (lang === "kaz") return "Кез келген тіл";
   return "Любой язык";
 }
 
+// Функция `allSpecialtiesLabel` реализует локальную часть бизнес-логики модуля.
 function allSpecialtiesLabel(lang: Lang): string {
   if (lang === "eng") return "All specialties";
   if (lang === "kaz") return "Барлық мамандықтар";
   return "Все специальности";
 }
 
+// Функция `windowLabel` реализует локальную часть бизнес-логики модуля.
 function windowLabel(lang: Lang, desk: string): string {
   if (lang === "eng") return `Window ${desk}`;
   if (lang === "kaz") return `Терезе ${desk}`;
   return `Окно ${desk}`;
 }
 
+// Функция `coursesLabel` реализует локальную часть бизнес-логики модуля.
 function coursesLabel(lang: Lang, courses: number[]): string {
   const allDefault = courses.length === 4 && courses.every((n, i) => n === i + 1);
   if (allDefault) {

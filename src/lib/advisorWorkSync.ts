@@ -7,6 +7,7 @@ export function managerWorkStorageKeys(managerId: number) {
   };
 }
 
+// Функция `ensureTodayBucket` реализует локальную часть бизнес-логики модуля.
 function ensureTodayBucket(managerId: number): void {
   const dk = `uniq.manager.workTodayDate.${managerId}`;
   const mk = `uniq.manager.workTodayMs.${managerId}`;
@@ -17,6 +18,7 @@ function ensureTodayBucket(managerId: number): void {
   }
 }
 
+// Функция `todayDateKeyLocal` реализует локальную часть бизнес-логики модуля.
 function todayDateKeyLocal(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

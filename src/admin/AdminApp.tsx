@@ -36,6 +36,7 @@ import { formatStudyDuration, parseStudyDuration } from "../lib/studyDuration";
 
 const OFFICE_SCHEME_FEATURE_ENABLED_KEY = "uniq.office.scheme.feature.enabled";
 
+// Функция `formatHm` реализует локальную часть бизнес-логики модуля.
 function formatHm(ms: number) {
   const s = Math.floor(Math.max(0, ms) / 1000);
   const h = Math.floor(s / 3600);
@@ -43,6 +44,7 @@ function formatHm(ms: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+// Функция `presetRangeBtnClass` реализует локальную часть бизнес-логики модуля.
 function presetRangeBtnClass(active: boolean) {
   return cn(
     "rounded-xl border px-3 py-2 text-xs font-extrabold transition",
@@ -52,12 +54,14 @@ function presetRangeBtnClass(active: boolean) {
   );
 }
 
+// Функция `formatLocalDateTime` реализует локальную часть бизнес-логики модуля.
 function formatLocalDateTime(raw: string | null | undefined, options?: Intl.DateTimeFormatOptions): string {
   const d = parseBackendDateTime(raw);
   if (!d) return "—";
   return d.toLocaleString([], options ?? { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+// Функция `formatMinDisplay` реализует локальную часть бизнес-логики модуля.
 function formatMinDisplay(value: number | null | undefined, minShort: string): string {
   if (value == null || !Number.isFinite(Number(value))) return "—";
   const n = Number(value);
@@ -65,6 +69,7 @@ function formatMinDisplay(value: number | null | undefined, minShort: string): s
   return `${shown} ${minShort}`;
 }
 
+// Функция `ticketStatusLabel` реализует локальную часть бизнес-логики модуля.
 function ticketStatusLabel(status: string, t: (k: string) => string): string {
   const s = String(status || "").toUpperCase();
   if (s === "WAITING") return t("waiting");
@@ -101,6 +106,7 @@ function safeParseArray<T>(raw: string | null | undefined, fallback: T[]): T[] {
   }
 }
 
+// Функция `formatReception` реализует локальную часть бизнес-логики модуля.
 function formatReception(row: AdvisorRow): string {
   const schools = safeParseArray<string>(row.assigned_schools_json, []);
   const courses = safeParseArray<number>(row.assigned_courses_json, [1, 2, 3, 4])
@@ -128,6 +134,7 @@ function formatReception(row: AdvisorRow): string {
   return parts.join(" · ");
 }
 
+// Функция `AdminLogin` реализует локальную часть бизнес-логики модуля.
 function AdminLogin() {
   const { t } = useI18n();
   const { setAdminUser } = useAdminContext();
@@ -138,6 +145,7 @@ function AdminLogin() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Функция `submit` реализует локальную часть бизнес-логики модуля.
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -214,8 +222,10 @@ function AdminLogin() {
   );
 }
 
+// Функция `AdminTabNav` реализует локальную часть бизнес-логики модуля.
 function AdminTabNav() {
   const { t } = useI18n();
+  // Функция `tabCls` реализует локальную часть бизнес-логики модуля.
   const tabCls = ({ isActive }: { isActive: boolean }) =>
     cn(
       "flex items-center gap-2 rounded-t-xl px-4 py-3 text-sm font-extrabold transition-colors",
@@ -263,6 +273,7 @@ export function AdminEmployees() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteBusyId, setDeleteBusyId] = useState<number | null>(null);
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
     if (!res.ok) {
@@ -293,6 +304,7 @@ export function AdminEmployees() {
     };
   }, []);
 
+  // Функция `createEmployee` реализует локальную часть бизнес-логики модуля.
   const createEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateBusy(true);
@@ -324,6 +336,7 @@ export function AdminEmployees() {
     await load();
   };
 
+  // Функция `removeEmployee` реализует локальную часть бизнес-логики модуля.
   const removeEmployee = async (id: number) => {
     if (!window.confirm(t("adminDeleteEmployeeConfirm"))) return;
     setDeleteBusyId(id);
@@ -500,6 +513,7 @@ export function AdminEmployees() {
   );
 }
 
+// Функция `AdminWindows` реализует локальную часть бизнес-логики модуля.
 function AdminWindows() {
   const { t } = useI18n();
   const [rows, setRows] = useState<AdvisorRow[] | null>(null);
@@ -513,6 +527,7 @@ function AdminWindows() {
     }
   });
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     const res = await fetchJSON(`/api/admin/managers?day=${encodeURIComponent(localYmdToday())}`);
     if (!res.ok) {
@@ -544,9 +559,11 @@ function AdminWindows() {
     };
   }, []);
 
+  // Функция `advisorAtWindow` реализует локальную часть бизнес-логики модуля.
   const advisorAtWindow = (w: number) =>
     rows?.find((r) => parseDeskWindowNumber(r.desk_number) === w) ?? null;
 
+  // Функция `onSelectWindow` реализует локальную часть бизнес-логики модуля.
   const onSelectWindow = async (windowNum: number, nextAdvisorId: string) => {
     if (!rows) return;
     const prev = advisorAtWindow(windowNum);
@@ -664,6 +681,7 @@ type AdminLoadResponse = {
   monthly: { month: number; registrations: number; calls: number }[];
 };
 
+// Функция `localYmdDaysAgo` реализует локальную часть бизнес-логики модуля.
 function localYmdDaysAgo(days: number): string {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -674,6 +692,7 @@ function localYmdDaysAgo(days: number): string {
   return `${y}-${m}-${day}`;
 }
 
+// Функция `localYmdToday` реализует локальную часть бизнес-логики модуля.
 function localYmdToday(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -682,6 +701,7 @@ function localYmdToday(): string {
   return `${y}-${m}-${day}`;
 }
 
+// Функция `firstDayOfMonthYmd` реализует локальную часть бизнес-логики модуля.
 function firstDayOfMonthYmd(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -689,6 +709,7 @@ function firstDayOfMonthYmd(): string {
   return `${y}-${m}-01`;
 }
 
+// Функция `AdminLoad` реализует локальную часть бизнес-логики модуля.
 function AdminLoad() {
   const { t } = useI18n();
   const [date, setDate] = useState(() => localYmdToday());
@@ -939,6 +960,7 @@ type AdminReviewExportRow = {
 
 type FaqDailyPoint = { day: string; count: number };
 
+// Функция `AdminFaqNoQueueStats` реализует локальную часть бизнес-логики модуля.
 function AdminFaqNoQueueStats() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
@@ -954,6 +976,7 @@ function AdminFaqNoQueueStats() {
   const isWeekPreset = !allTime && from === weekFrom && to === todayRange;
   const isMonthPreset = !allTime && from === monthFrom && to === todayRange;
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async (override?: Partial<{ from: string; to: string; allTime: boolean }>) => {
     const f = override?.from ?? from;
     const t = override?.to ?? to;
@@ -988,6 +1011,7 @@ function AdminFaqNoQueueStats() {
 
   const totalHits = useMemo(() => (rows ? rows.reduce((a, r) => a + r.count, 0) : 0), [rows]);
 
+  // Функция `downloadCsv` реализует локальную часть бизнес-логики модуля.
   const downloadCsv = async () => {
     const qs = new URLSearchParams({ format: "csv" });
     if (!allTime) {
@@ -1177,6 +1201,7 @@ function AdminFaqNoQueueStats() {
   );
 }
 
+// Функция `AdminVisitsExport` реализует локальную часть бизнес-логики модуля.
 function AdminVisitsExport() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
@@ -1194,6 +1219,7 @@ function AdminVisitsExport() {
   const isWeekPreset = from === weekFrom && to === todayRange;
   const isMonthPreset = from === monthFrom && to === todayRange;
 
+  // Функция `visitQuery` реализует локальную часть бизнес-логики модуля.
   const visitQuery = () => {
     const qs = new URLSearchParams({ from, to });
     if (visitStatus.trim()) qs.set("status", visitStatus.trim().toUpperCase());
@@ -1202,6 +1228,7 @@ function AdminVisitsExport() {
     return qs;
   };
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     setLoading(true);
     setErr("");
@@ -1224,6 +1251,7 @@ function AdminVisitsExport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Функция `downloadCsv` реализует локальную часть бизнес-логики модуля.
   const downloadCsv = async () => {
     const qs = visitQuery();
     qs.set("format", "csv");
@@ -1454,6 +1482,7 @@ function AdminVisitsExport() {
   );
 }
 
+// Функция `starsLabel` реализует локальную часть бизнес-логики модуля.
 function starsLabel(n: number): string {
   const x = Number(n);
   if (!Number.isFinite(x)) return "—";
@@ -1461,6 +1490,7 @@ function starsLabel(n: number): string {
   return "★".repeat(s) + "☆".repeat(5 - s);
 }
 
+// Функция `AdminReviewsExport` реализует локальную часть бизнес-логики модуля.
 function AdminReviewsExport() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
@@ -1471,6 +1501,7 @@ function AdminReviewsExport() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Функция `reviewsQuery` реализует локальную часть бизнес-логики модуля.
   const reviewsQuery = () => {
     const qs = new URLSearchParams({ from, to });
     if (reviewStars.trim()) qs.set("stars", reviewStars.trim());
@@ -1478,6 +1509,7 @@ function AdminReviewsExport() {
     return qs;
   };
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     setLoading(true);
     setErr("");
@@ -1500,6 +1532,7 @@ function AdminReviewsExport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Функция `downloadCsv` реализует локальную часть бизнес-логики модуля.
   const downloadCsv = async () => {
     const qs = reviewsQuery();
     qs.set("format", "csv");
@@ -1730,6 +1763,7 @@ export function AdminWaitStats() {
   const isWeekPreset = from === weekFrom && to === todayRange;
   const isMonthPreset = from === monthFrom && to === todayRange;
 
+  // Функция `buildQs` реализует локальную часть бизнес-логики модуля.
   const buildQs = (csv: boolean) => {
     const qs = new URLSearchParams({ from, to });
     if (status.trim()) qs.set("status", status.trim().toUpperCase());
@@ -1742,6 +1776,7 @@ export function AdminWaitStats() {
     return qs;
   };
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     setLoading(true);
     setErr("");
@@ -1762,6 +1797,7 @@ export function AdminWaitStats() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Функция `downloadCsv` реализует локальную часть бизнес-логики модуля.
   const downloadCsv = async () => {
     const res = await fetchJSON(`/api/admin/stats/wait-times?${buildQs(true)}`);
     if (!res.ok) return;
@@ -2048,6 +2084,7 @@ export function AdminWaitStats() {
   );
 }
 
+// Функция `AdminQueuesBoard` реализует локальную часть бизнес-логики модуля.
 function AdminQueuesBoard() {
   const { t } = useI18n();
   const loc = useLocation();
@@ -2056,6 +2093,7 @@ function AdminQueuesBoard() {
   const [err, setErr] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     setLoading(true);
     setErr("");
@@ -2177,6 +2215,7 @@ function AdminQueuesBoard() {
   );
 }
 
+// Функция `AdminSchoolsServedStats` реализует локальную часть бизнес-логики модуля.
 function AdminSchoolsServedStats() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => firstDayOfMonthYmd());
@@ -2191,12 +2230,14 @@ function AdminSchoolsServedStats() {
   const isWeekPreset = from === weekFrom && to === todayRange;
   const isMonthPreset = from === monthFrom && to === todayRange;
 
+  // Функция `qs` реализует локальную часть бизнес-логики модуля.
   const qs = (csv: boolean) => {
     const s = new URLSearchParams({ from, to });
     if (csv) s.set("format", "csv");
     return s;
   };
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     setLoading(true);
     setErr("");
@@ -2217,6 +2258,7 @@ function AdminSchoolsServedStats() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Функция `downloadCsv` реализует локальную часть бизнес-логики модуля.
   const downloadCsv = async () => {
     const res = await fetchJSON(`/api/admin/stats/schools-served?${qs(true)}`);
     if (!res.ok) return;
@@ -2394,6 +2436,7 @@ type AdminBookingRow = {
   advisor_desk: string | null;
 };
 
+// Функция `AdminBookingsStats` реализует локальную часть бизнес-логики модуля.
 function AdminBookingsStats() {
   const { t } = useI18n();
   const [from, setFrom] = useState(() => localYmdToday());
@@ -2412,6 +2455,7 @@ function AdminBookingsStats() {
   const isWeekPreset = from === weekFrom && to === todayRange;
   const isMonthPreset = from === monthFrom && to === todayRange;
 
+  // Функция `buildQs` реализует локальную часть бизнес-логики модуля.
   const buildQs = (csv: boolean) => {
     const qs = new URLSearchParams({ from, to });
     if (status.trim()) qs.set("status", status.trim().toUpperCase());
@@ -2421,6 +2465,7 @@ function AdminBookingsStats() {
     return qs;
   };
 
+  // Функция `load` реализует локальную часть бизнес-логики модуля.
   const load = async () => {
     setLoading(true);
     setErr("");
@@ -2448,6 +2493,7 @@ function AdminBookingsStats() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Функция `downloadCsv` реализует локальную часть бизнес-логики модуля.
   const downloadCsv = async () => {
     const res = await fetchJSON(`/api/admin/stats/bookings?${buildQs(true)}`);
     if (!res.ok) return;
@@ -2658,6 +2704,7 @@ function AdminBookingsStats() {
   );
 }
 
+// Функция `AdminStats` реализует локальную часть бизнес-логики модуля.
 function AdminStats() {
   const { t } = useI18n();
   const [data, setData] = useState<AdminSummary | null>(null);
@@ -2778,6 +2825,7 @@ function AdminStats() {
   );
 }
 
+// Функция `AdminSettingsInner` реализует локальную часть бизнес-логики модуля.
 function AdminSettingsInner() {
   const { t, lang, setLang } = useI18n();
   const { adminUser } = useAdminContext();
@@ -2794,6 +2842,7 @@ function AdminSettingsInner() {
     { id: "kaz", label: "Қазақша" },
   ];
 
+  // Функция `submitAdminPassword` реализует локальную часть бизнес-логики модуля.
   const submitAdminPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordErr("");
@@ -2914,10 +2963,12 @@ function AdminSettingsInner() {
   );
 }
 
+// Функция `AdminSettingsPage` реализует локальную часть бизнес-логики модуля.
 function AdminSettingsPage() {
   return <AdminSettingsInner />;
 }
 
+// Функция `AdminLayout` реализует локальную часть бизнес-логики модуля.
 function AdminLayout() {
   const { adminUser, setAdminUser } = useAdminContext();
   const loc = useLocation();
@@ -2942,6 +2993,7 @@ function AdminLayout() {
     };
   }, [setAdminUser]);
 
+  // Функция `logout` реализует локальную часть бизнес-логики модуля.
   const logout = async () => {
     await fetchJSON("/api/admin/logout", { method: "POST" });
     setAdminUser(null);
@@ -3000,6 +3052,7 @@ function AdminLayout() {
   );
 }
 
+// Функция `AdminApp` реализует локальную часть бизнес-логики модуля.
 export default function AdminApp() {
   return (
     <Routes>

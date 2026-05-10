@@ -18,6 +18,7 @@ type Msg = {
 const CHAT_HISTORY_KEY = "uniq.student.chat.history.v1";
 const CHAT_DEBUG_KEY = "uniq.student.chat.debug.v1";
 
+// Функция `normalizeBotText` реализует локальную часть бизнес-логики модуля.
 function normalizeBotText(input: string): string {
   let t = String(input || "").replace(/\r\n/g, "\n").trim();
   // If model returned markdown blocks inline, force visual structure.
@@ -29,6 +30,7 @@ function normalizeBotText(input: string): string {
   return t;
 }
 
+// Функция `renderInlineBold` формирует отображение соответствующего блока интерфейса.
 function renderInlineBold(text: string): ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((p, i) => {
@@ -43,6 +45,7 @@ function renderInlineBold(text: string): ReactNode[] {
   });
 }
 
+// Функция `ChatWidget` реализует локальную часть бизнес-логики модуля.
 export default function ChatWidget() {
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
@@ -145,6 +148,7 @@ export default function ChatWidget() {
     ]);
   };
 
+  // Функция `sendFeedback` реализует локальную часть бизнес-логики модуля.
   const sendFeedback = async (msgId: string, helpful: -1 | 1) => {
     const msg = messages.find((m) => m.id === msgId && m.role === "bot");
     if (!msg) return;
@@ -167,6 +171,7 @@ export default function ChatWidget() {
     }
   };
 
+  // Функция `send` реализует локальную часть бизнес-логики модуля.
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
