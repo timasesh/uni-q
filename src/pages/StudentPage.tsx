@@ -82,7 +82,7 @@ export default function StudentPage() {
   const callSoundRef = useRef<HTMLAudioElement | null>(null);
   const callSoundPrimedRef = useRef(false);
 
-  /** Разблокирует воспроизведение под политикой автоплея (нужен жест до вызова из очереди). */
+  /** Разблокирует автоплей без звука: тихий play того же файла слышен при взятии талона — только muted + pause. */
   const primeCallSoundFromUserGesture = useCallback(() => {
     if (callSoundPrimedRef.current) return;
     try {
@@ -93,16 +93,19 @@ export default function StudentPage() {
       }
       const audio = callSoundRef.current;
       const targetVol = 0.9;
-      audio.volume = 0.0001;
+      audio.muted = true;
+      audio.volume = targetVol;
       void audio
         .play()
         .then(() => {
           audio.pause();
           audio.currentTime = 0;
+          audio.muted = false;
           audio.volume = targetVol;
           callSoundPrimedRef.current = true;
         })
         .catch(() => {
+          audio.muted = false;
           audio.volume = targetVol;
         });
     } catch {
@@ -375,10 +378,12 @@ export default function StudentPage() {
       try {
         if (!callSoundRef.current) {
           callSoundRef.current = new Audio("/sound/song.mp3");
-          callSoundRef.current.volume = 0.9;
         }
-        callSoundRef.current.currentTime = 0;
-        void callSoundRef.current.play().catch(() => {});
+        const callAudio = callSoundRef.current;
+        callAudio.muted = false;
+        callAudio.volume = 0.9;
+        callAudio.currentTime = 0;
+        void callAudio.play().catch(() => {});
       } catch {
         /* ignore */
       }
