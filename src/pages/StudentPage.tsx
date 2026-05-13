@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { io, Socket } from "socket.io-client";
@@ -80,6 +80,35 @@ export default function StudentPage() {
   const sockRef = useRef<Socket | null>(null);
   const prevStatusRef = useRef<string | null>(null);
   const callSoundRef = useRef<HTMLAudioElement | null>(null);
+  const callSoundPrimedRef = useRef(false);
+
+  /** Разблокирует воспроизведение под политикой автоплея (нужен жест до вызова из очереди). */
+  const primeCallSoundFromUserGesture = useCallback(() => {
+    if (callSoundPrimedRef.current) return;
+    try {
+      if (!callSoundRef.current) {
+        const a = new Audio("/sound/song.mp3");
+        a.preload = "auto";
+        callSoundRef.current = a;
+      }
+      const audio = callSoundRef.current;
+      const targetVol = 0.9;
+      audio.volume = 0.0001;
+      void audio
+        .play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = targetVol;
+          callSoundPrimedRef.current = true;
+        })
+        .catch(() => {
+          audio.volume = targetVol;
+        });
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingHm, setBookingHm] = useState("");
@@ -349,12 +378,22 @@ export default function StudentPage() {
           callSoundRef.current.volume = 0.9;
         }
         callSoundRef.current.currentTime = 0;
-        void callSoundRef.current.play();
+        void callSoundRef.current.play().catch(() => {});
       } catch {
-        // autoplay may be blocked; ignore
+        /* ignore */
       }
     }
   }, [myTicket?.status]);
+
+  useEffect(() => {
+    if (!ticketId) return;
+    if (myTicket?.status !== "WAITING") return;
+    const onPointerDown = () => {
+      primeCallSoundFromUserGesture();
+    };
+    window.addEventListener("pointerdown", onPointerDown, { passive: true });
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [ticketId, myTicket?.status, primeCallSoundFromUserGesture]);
 
   useEffect(() => {
     if (!myTicket || myTicket.status !== "WAITING" || !myTicket.preferred_slot_at) return;
@@ -451,6 +490,7 @@ export default function StudentPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormComplete) return;
+    primeCallSoundFromUserGesture();
     await postTicket();
   };
 
@@ -482,6 +522,7 @@ export default function StudentPage() {
       alert(t("bookingModalHint"));
       return;
     }
+    primeCallSoundFromUserGesture();
     await postTicket(iso);
   };
 
