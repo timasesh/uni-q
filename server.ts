@@ -939,6 +939,7 @@ app.post("/api/registration/check", (req, res) => {
 });
 
 /** Чат-помощник студента: прокси к NVIDIA NIM (OpenAI-совместимый API). Ключ только на сервере: UNIQ_NVIDIA_API_KEY. */
+// промпт для чата
 const UNIQ_NVIDIA_API_KEY = String(process.env.UNIQ_NVIDIA_API_KEY || "").trim();
 const UNIQ_NVIDIA_CHAT_MODEL = String(process.env.UNIQ_NVIDIA_CHAT_MODEL || "nvidia/nvidia-nemotron-nano-9b-v2").trim();
 const UNIQ_NVIDIA_API_BASE = String(process.env.UNIQ_NVIDIA_API_BASE || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "");
@@ -1137,6 +1138,7 @@ function loadChatKb(): ChatKbEntry[] {
 }
 
 /** Считает релевантность текста к вопросу по token overlap и trigram similarity. */
+// считывание скор бала
 function scoreTextAgainst(
   userNorm: string,
   userTokens: Set<string>,
