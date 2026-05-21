@@ -1035,10 +1035,11 @@ Do not attempt to help further.
 ══════════════════════════════════════════
 
 FORMATTING:
-- Use **bold** for cabinet numbers, deadlines, key terms.
+- Use **bold** for cabinet numbers, deadlines, key terms, system names.
 - Use numbered lists ONLY when the KB answer itself has multiple steps.
 - NEVER use markdown headers (##, ###, ####). Forbidden.
 - Be concise. No preamble ("Конечно!", "Здравствуйте!"), no filler phrases, no closing summaries unless the KB answer includes them.
+- If the KB answer contains a navigation path like "Карта сайта - раздел - подраздел", format it clearly as: **Platonus → Карта сайта → [раздел]**.
 
 LANGUAGE: Reply in the same language as the student's last message (Russian/Kazakh/English), default Russian.
 `;
@@ -1117,7 +1118,7 @@ function tokenizeKbText(v: string): Set<string> {
   const tokens = normalizeKbText(v)
     .split(" ")
     .map((x) => x.trim())
-    .filter((x) => (x.length >= 3 || x === "it") && !KB_RU_STOPWORDS.has(x));
+    .filter((x) => (x.length >= 3 || x === "it" || x === "fx" || x === "gpa") && !KB_RU_STOPWORDS.has(x));
   return new Set(tokens);
 }
 
@@ -1677,7 +1678,9 @@ app.post("/api/student/chat", async (req, res) => {
   // --- NO GOOD MATCH PATH ---
   // Site questions always go to LLM (SITE_GUIDE handles them) even without a KB match.
   // For non-site questions: if score is too low, redirect to SSC instead of calling LLM.
-  const KB_MIN_SCORE_FOR_LLM = 3.5;
+  // Use a lower threshold for queries with a specific known intent (retake, payment, etc.)
+  // to ensure domain questions reach LLM even when KB wording differs from user phrasing.
+  const KB_MIN_SCORE_FOR_LLM = intentNow !== "other" ? 2.0 : 3.5;
   if (!bestKb || (bestKb.score < KB_MIN_SCORE_FOR_LLM && !isLocationCabinetQuery(lastUserQuestion) && !isSiteQuestion)) {
     return res.json({
       reply:
