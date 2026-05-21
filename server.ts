@@ -1444,7 +1444,8 @@ type ChatIntent =
 function detectIntent(text: string): ChatIntent {
   const s = normalizeKbText(text);
   if (!s) return "other";
-  if (/(военн|кафедр|әскери|military)/iu.test(s)) return "military";
+  // Use negative lookbehind to avoid matching substrings: e.g. «присвоенное» contains «военн»
+  if (/(?<![а-яёА-ЯЁa-zA-Z])(военн|кафедр|әскери|military)/iu.test(s)) return "military";
   // FX/ретейк проверяем ДО documents, чтобы "заявление на FX" не попал в documents
   if (/(fx\b|ретейк|пересдач|академическ.*задолж)/iu.test(s)) return "retake";
   // Скидка на обучение → payment; скидка на общежитие → hostel (ниже)
