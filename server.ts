@@ -1226,10 +1226,11 @@ function isLocationCabinetQuery(text: string): boolean {
   return /(где|кабинет|кабинете|адрес|расположен|находится|где находится|where|office|room|как найти|как дойти|как добраться|как попасть|как пройти|найти.*корпус|найти.*здание|найти.*каф|найти.*столов|найти.*библ|найти.*спорт|найти.*общежит|как добрат)/iu.test(s);
 }
 
-/** Определяет, что вопрос касается функций и интерфейса сайта uni-q (не академических вопросов). */
+/** Определяет, что вопрос касается функций и интерфейса сайта uni-q (не академических вопросов).
+ *  Такие вопросы всегда идут через LLM + SITE_GUIDE, минуя прямой KB-ответ. */
 function isSiteUsageQuery(text: string): boolean {
   const s = normalizeKbText(text);
-  return /(талон|встать в очередь|записат|как встать|как зарегистр|бронир|слот|временн|статус.*очередь|очередь.*статус|вызван|ожидан|пропущен|завершено|отменен|покинут|отменить очередь|схем.*офис|офис.*схем|окно.*приём|приём.*окно|как пользоват|как работает.*сайт|сайт.*как работает|что такое uni.?q|функци.*сайт|навигац|faq.*раздел|раздел.*faq|чат.?помощник|чат.?бот.*сайт|язык.*интерфейс|переключ.*язык|звуков.*сигнал|уведомлен.*вызов|как отменить.*очеред|как выйти.*очеред)/iu.test(s);
+  return /(талон|номер.*очереди|место.*очереди|занят.*очередь|встат.*очередь|стат.*очередь|войти.*очередь|попасть.*очередь|зарегистр.*очередь|записат.*очередь|как встать|как занять|как попасть.*очередь|получить.*талон|взять.*талон|как войти.*uni|как использ.*uni|как работает.*uni|бронир|слот|временн.*запись|статус.*очередь|очередь.*статус|вызван|ожидан|пропущен|завершено|отменен|покинут|отменить очередь|выйти.*очередь|покинуть.*очередь|схем.*офис|офис.*схем|схема.*окн|окно.*приём|приём.*окно|как пользоват|как работает.*сайт|сайт.*как работает|что такое uni.?q|функци.*сайт|возможност.*сайт|навигац|faq.*раздел|раздел.*faq|чат.?помощник|чат.?бот.*сайт|язык.*интерфейс|переключ.*язык|звуков.*сигнал|уведомлен.*вызов|как отменить.*очеред|как выйти.*очеред|как записат|как зарегистр.*очередь)/iu.test(s);
 }
 
 /** Проверяет, содержит ли ответ конкретику по кабинету (например "кабинет 214"). */
@@ -1547,9 +1548,14 @@ app.post("/api/student/chat", async (req, res) => {
     !!lastAssistantAnswer &&
     normalizeKbText(String(lastAssistantAnswer || "")) === normalizeKbText(bestKb.entry.answer) &&
     meaningfullyDifferentQuestion(lastUserQuestion, lastAnchorUserQuestion);
+  // Определяем является ли вопрос о работе сайта uni-q ДО всех path-проверок,
+  // чтобы использовать этот флаг в clarification, no-match и direct-KB путях.
+  const isSiteQuestion = isSiteUsageQuery(lastUserQuestion);
+
   // --- CLARIFICATION PATH ---
   // If the query is short/ambiguous and the top-2 KB matches belong to different categories or intents,
   // ask the student to clarify rather than guessing the wrong topic (required behavior per Q&A policy).
+  // Site questions skip clarification and go directly to LLM with SITE_GUIDE.
   const userQueryTokenCount = tokenizeKbText(lastUserQuestion).size;
   const topClarifyMatches = ranked.filter((r) => r.score >= 3.0).slice(0, 3);
   const intentBest = topClarifyMatches[0] ? detectIntent(`${topClarifyMatches[0].entry.question} ${topClarifyMatches[0].entry.answer}`) : "other";
@@ -1558,6 +1564,7 @@ app.post("/api/student/chat", async (req, res) => {
     topClarifyMatches.length >= 2 &&
     (intentBest !== intentSecond || topClarifyMatches[0].entry.category !== topClarifyMatches[1].entry.category);
   const shouldAskClarification =
+    !isSiteQuestion &&                                              // site questions → LLM, not clarification
     !topicLock &&
     !isFollowupUserQuestion(lastUserQuestion) &&
     !hardIntentShift &&
@@ -1582,6 +1589,7 @@ app.post("/api/student/chat", async (req, res) => {
               userQueryTokenCount,
               intentBest,
               intentSecond,
+              isSiteQuestion,
               topScores: topClarifyMatches.map((r) => ({ q: r.entry.question, score: r.score })),
             },
           }
@@ -1590,11 +1598,9 @@ app.post("/api/student/chat", async (req, res) => {
   }
 
   // --- NO GOOD MATCH PATH ---
-  // If there is no KB entry with sufficient confidence AND it is not a site-usage question,
-  // direct to SSC instead of calling LLM (prevents hallucination outside the approved Q&A base).
-  // Site-usage questions (how to use queue, statuses, booking, etc.) are handled by SITE_GUIDE via LLM.
+  // Site questions always go to LLM (SITE_GUIDE handles them) even without a KB match.
+  // For non-site questions: if score is too low, redirect to SSC instead of calling LLM.
   const KB_MIN_SCORE_FOR_LLM = 3.5;
-  const isSiteQuestion = isSiteUsageQuery(lastUserQuestion);
   if (!bestKb || (bestKb.score < KB_MIN_SCORE_FOR_LLM && !isLocationCabinetQuery(lastUserQuestion) && !isSiteQuestion)) {
     return res.json({
       reply:
@@ -1616,7 +1622,9 @@ app.post("/api/student/chat", async (req, res) => {
   }
 
   // Direct KB reply when confidence is strong enough by question semantics.
+  // Site questions ALWAYS bypass this path and go to LLM so SITE_GUIDE is used instead of KB.
   const canReplyDirectKb =
+    !isSiteQuestion &&                                              // site questions → LLM with SITE_GUIDE
     !!bestKb &&
     (bestKb.questionScore >= 6.5 || (bestKb.score >= 8.0 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.0 && bestKb.aOverlap >= 3)) &&
     (!secondKb || bestKb.score - secondKb.score >= 0.9) &&
@@ -1625,6 +1633,7 @@ app.post("/api/student/chat", async (req, res) => {
   // Location/navigation queries ("где", "как найти", "как дойти" etc.) get a lower score threshold
   // so paraphrased location questions return the same direct KB answer as "где X?".
   const locationFallback =
+    !isSiteQuestion &&                                              // site questions → LLM with SITE_GUIDE
     !!bestKb &&
     isLocationCabinetQuery(lastUserQuestion) &&
     answerHasCabinetInfo(bestKb.entry.answer) &&
