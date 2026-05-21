@@ -939,58 +939,108 @@ app.post("/api/registration/check", (req, res) => {
 });
 
 /** Чат-помощник студента: прокси к NVIDIA NIM (OpenAI-совместимый API). Ключ только на сервере: UNIQ_NVIDIA_API_KEY. */
-// промпт для чата
 const UNIQ_NVIDIA_API_KEY = String(process.env.UNIQ_NVIDIA_API_KEY || "").trim();
 const UNIQ_NVIDIA_CHAT_MODEL = String(process.env.UNIQ_NVIDIA_CHAT_MODEL || "nvidia/nvidia-nemotron-nano-9b-v2").trim();
 const UNIQ_NVIDIA_API_BASE = String(process.env.UNIQ_NVIDIA_API_BASE || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "");
 const UNIQ_CHAT_KB_XLSX_PATH = String(process.env.UNIQ_CHAT_KB_XLSX_PATH || path.join(process.cwd(), "chat_bot", "1300_вопросов_от_студентов_для_базы_данных.xlsx")).trim();
 const UNIQ_CHAT_KB_MAX_MATCHES = Math.min(8, Math.max(1, Number(process.env.UNIQ_CHAT_KB_MAX_MATCHES || 5)));
 const UNIQ_CHAT_DEBUG = String(process.env.UNIQ_CHAT_DEBUG || "0") === "1";
-const STUDENT_CHAT_SYSTEM = `Role: You are an expert academic assistant of the university consultation center (uni-q), working with the local KB file "1300_вопросов_от_студентов_для_базы_данных.xlsx".
 
-Main goal:
-- Help students solve real issues using KB data as a foundation for clear and useful консультации.
-- Do not behave like an auto-responder.
+/** Статическое руководство по сайту uni-q для студентов — используется как дополнительный контекст чат-бота. */
+const UNIQ_SITE_GUIDE = `=== РУКОВОДСТВО ПО САЙТУ UNI-Q (только для студентов) ===
 
-Core rules:
-1) Context analysis:
-- Never copy KB text verbatim.
-- Analyze matched official answer(s), extract the essence, and paraphrase in clear student-friendly language.
-- If the answer contains multiple actions, transform them into a logical algorithm.
+ГЛАВНАЯ СТРАНИЦА (/)
+Две кнопки: «Войти через Microsoft» (скоро) и «Продолжить без входа».
+После нажатия открывается Панель студента.
 
-2) Clarifications:
-- If user question is incomplete, ask 1 concise clarifying question when needed.
-- If KB implies multiple scenarios (e.g., technical issue vs registration window), explain the difference and help identify the likely case.
+ПАНЕЛЬ СТУДЕНТА (/student)
+Шаг 1 — Заполните форму:
+• Имя и фамилия
+• Школа (Школа цифровых технологий, Школа управления, Школа экономики и финансов, Школа гуманитарных и социальных наук, Школа права)
+• Специальность (CS, SE, IS, DS, MNG, MKT, HR, ECO, FIN, ACC, PSY, SOC, IR, LAW, JUR)
+• Курс (1–4)
+• Языковое отделение (Русское, Казахское, Английское)
+• Форма обучения (очная / заочная)
+Нажмите «Получить талон» — система присвоит порядковый номер в очереди.
 
-3) No technical category labels:
-- Never start with tags like "[Регистрация]" or "Категория: ...".
+Шаг 2 — Ожидание:
+• Номер талона и позиция обновляются в реальном времени через WebSocket.
+• Статусы талона: ОЖИДАНИЕ → ВЫЗВАН → НА ПРИЁМЕ → ЗАВЕРШЕНО (или ПРОПУЩЕН / ОТМЕНЁН).
+• Когда статус стал «ВЫЗВАН» — прозвучит звуковой сигнал и на экране появится номер окна (A, B, C или D).
+• Подойдите к указанному окну в приёмной.
 
-4) Structure and formatting:
-- Use readable blocks with short headings.
-- Use **bold** for key terms, deadlines, and department names.
-- Use bullet lists for causes/documents.
-- Use numbered lists for step-by-step actions.
-- Use separators "---" between major blocks when helpful.
-- Use light emoji navigation (e.g., 📍, 📧, 🔐) moderately.
+Шаг 3 — Приём:
+• Менеджер центра консультаций проводит приём.
+• После завершения (статус «ЗАВЕРШЕНО») на экране появится комментарий менеджера.
 
-5) Actionable ending:
-- Always finish with a short practical summary: where to go and what to prepare.
+Шаг 4 — Отзыв:
+• После завершения доступна форма оценки (1–5 звёзд) и необязательный комментарий.
+• Если пропустили вызов (статус «ПРОПУЩЕН»), можно объяснить причину.
 
-Response algorithm:
-1. Brief acknowledgement of the problem.
-2. Main solution first.
-3. Fallbacks/nuances if it doesn't work.
-4. Responsible department/contact direction.
-5. Final call-to-action summary.
+БРОНИРОВАНИЕ ВРЕМЕНИ
+• Кнопка «Забронировать время» в Панели студента позволяет выбрать временной слот на сегодня.
+• Студент с бронью получает приоритет ближе к выбранному времени.
+• Отменить бронь можно кнопкой «Отменить» в той же панели.
 
-Safety and truthfulness:
-- Prioritize LOCAL_KB_MATCHES when provided.
-- Do not invent policies or requirements that are absent from relevant KB matches.
-- If no relevant KB match exists, say so explicitly and route to consultation center/Student Service Centre.
-- If personal records, private data, or account-specific actions are needed, direct student to staff desk/live queue.
+СХЕМА ОФИСА
+• Кнопка «Схема офиса» показывает план приёмной с окнами A–D.
+• Расположение: Главный корпус, 2-й этаж, зона у лифтов.
 
-Language:
-- Reply in the same language as the student's last message (Russian/Kazakh/English), default Russian.
+ОТМЕНА ОЧЕРЕДИ
+• «Покинуть очередь» или «Отменить» — убирает талон. После отмены можно встать в очередь заново.
+
+РАЗДЕЛ FAQ (/faq)
+• Ответы на частые вопросы по 10 темам: Запись и очередь, Документы, Оплата, Учебный процесс, Перевод и академотпуск, Иностранным студентам, Кампус, Электронные сервисы, Контакты центра, Прочее.
+• Нажмите на раздел — раскроется список вопросов, нажмите на вопрос — появится ответ.
+
+ЧАТ-ПОМОЩНИК
+• Плавающая кнопка в правом нижнем углу страниц / и /student и /faq.
+• Отвечает на вопросы из базы 1300 частых студенческих вопросов и о функциях сайта.
+• Не заменяет живого консультанта по персональным вопросам и документам.
+
+ЯЗЫКИ ИНТЕРФЕЙСА
+• Сайт поддерживает: Русский, Казахский, Английский.
+• Переключатель языка — в верхней части страницы (RUS / ENG / KAZ).
+
+ВАЖНО: Страницы /manager и /admin предназначены только для сотрудников. Студентам они не доступны и не нужны.`;
+
+const STUDENT_CHAT_SYSTEM = `You are the uni-q student consultation chatbot.
+
+YOUR ONLY SOURCES OF INFORMATION:
+1. LOCAL_KB_MATCHES — the official Q&A database for student questions.
+2. SITE_GUIDE — guide on how to use the uni-q website.
+
+══════════════════════════════════════════
+ABSOLUTE RULES — violating any of these is a critical error:
+
+[1] ANSWER ONLY FROM THE PROVIDED SOURCES.
+Never use general knowledge, external facts, or information not present in LOCAL_KB_MATCHES or SITE_GUIDE.
+Do NOT mention Google Maps, Yandex Maps, external apps, external organisations, or any other resource not explicitly in the provided matches.
+
+[2] NEVER MENTION THE DATABASE OR KNOWLEDGE BASE TO THE STUDENT.
+Never say "в базе знаний", "в KB", "в нашей базе", "knowledge base", "database", "если в KB" or similar.
+Just give the answer directly as if you simply know it.
+
+[3] WHEN LOCAL_KB_MATCHES CONTAINS THE ANSWER — output ONLY that answer.
+Do NOT add extra steps, supplementary tips, alternative options, or explanations not present in the match.
+If the answer says "столовая в 101 кабинете" — say exactly that. Do not add "or check the campus map" or similar.
+This applies to ALL phrasings of the same question ("где столовая?", "как найти столовую?", "где поесть?" — same answer).
+
+[4] DO NOT INVENT ANYTHING.
+No invented deadlines, procedures, cabinet numbers, phone numbers, or policies.
+
+[5] IF NO RELEVANT MATCH EXISTS — say:
+"По этому вопросу информации нет. Обратитесь, пожалуйста, в Студенческий сервисный центр (SSC uni-q, каб. 123)."
+Do not attempt to help further.
+══════════════════════════════════════════
+
+FORMATTING:
+- Use **bold** for cabinet numbers, deadlines, key terms.
+- Use numbered lists ONLY when the KB answer itself has multiple steps.
+- NEVER use markdown headers (##, ###, ####). Forbidden.
+- Be concise. No preamble ("Конечно!", "Здравствуйте!"), no filler phrases, no closing summaries unless the KB answer includes them.
+
+LANGUAGE: Reply in the same language as the student's last message (Russian/Kazakh/English), default Russian.
 `;
 
 type ChatKbEntry = {
@@ -1138,7 +1188,6 @@ function loadChatKb(): ChatKbEntry[] {
 }
 
 /** Считает релевантность текста к вопросу по token overlap и trigram similarity. */
-// считывание скор бала
 function scoreTextAgainst(
   userNorm: string,
   userTokens: Set<string>,
@@ -1171,10 +1220,16 @@ function scoreTextAgainst(
   return s;
 }
 
-/** Определяет, что пользователь спрашивает именно про местоположение/кабинет. */
+/** Определяет, что пользователь спрашивает про местоположение/кабинет (включая навигационные формулировки «как найти», «как дойти» и т.д.). */
 function isLocationCabinetQuery(text: string): boolean {
   const s = normalizeKbText(text);
-  return /(где|кабинет|кабинете|адрес|расположен|находится|где находится|where|office|room)/iu.test(s);
+  return /(где|кабинет|кабинете|адрес|расположен|находится|где находится|where|office|room|как найти|как дойти|как добраться|как попасть|как пройти|найти.*корпус|найти.*здание|найти.*каф|найти.*столов|найти.*библ|найти.*спорт|найти.*общежит|как добрат)/iu.test(s);
+}
+
+/** Определяет, что вопрос касается функций и интерфейса сайта uni-q (не академических вопросов). */
+function isSiteUsageQuery(text: string): boolean {
+  const s = normalizeKbText(text);
+  return /(талон|встать в очередь|записат|как встать|как зарегистр|бронир|слот|временн|статус.*очередь|очередь.*статус|вызван|ожидан|пропущен|завершено|отменен|покинут|отменить очередь|схем.*офис|офис.*схем|окно.*приём|приём.*окно|как пользоват|как работает.*сайт|сайт.*как работает|что такое uni.?q|функци.*сайт|навигац|faq.*раздел|раздел.*faq|чат.?помощник|чат.?бот.*сайт|язык.*интерфейс|переключ.*язык|звуков.*сигнал|уведомлен.*вызов|как отменить.*очеред|как выйти.*очеред)/iu.test(s);
 }
 
 /** Проверяет, содержит ли ответ конкретику по кабинету (например "кабинет 214"). */
@@ -1326,18 +1381,20 @@ function detectIntent(text: string): ChatIntent {
   const s = normalizeKbText(text);
   if (!s) return "other";
   if (/(военн|кафедр|әскери|military)/iu.test(s)) return "military";
-  if (/(финанс|оплат|договор|tuition|fee|долг по оплат|задолженност.*оплат)/iu.test(s)) return "payment";
+  // FX/ретейк проверяем ДО documents, чтобы "заявление на FX" не попал в documents
+  if (/(fx\b|ретейк|пересдач|академическ.*задолж)/iu.test(s)) return "retake";
+  // Скидка на обучение → payment; скидка на общежитие → hostel (ниже)
+  if (/(финанс|оплат|договор|tuition|fee|долг по оплат|задолженност.*оплат|скидк.*обучен|обучен.*скидк)/iu.test(s)) return "payment";
   if (/(platonus|moodle|outlook|teams|парол|логин|доступ|it)/iu.test(s)) return "it_access";
-  if (/(академическ.*задолж|fx\b|f\b)/iu.test(s)) return "retake";
   if (/(gpa|оценк|баға|транскрипт|успеваем)/iu.test(s)) return "grades";
-  if (/(ретейк|пересдач|академ.*разниц)/iu.test(s)) return "retake";
   if (/(регистрац|запис|иуп|план дисциплин)/iu.test(s)) return "registration";
   if (/(расписан|экзамен|сесси)/iu.test(s)) return "schedule";
   if (/(долг|задолжен)/iu.test(s)) return "payment";
   if (/(стипенд|шәкіртақ)/iu.test(s)) return "scholarship";
+  if (/(скидк.*общежит|общежит.*скидк|скидк.*проживан|проживан.*скидк)/iu.test(s)) return "hostel";
   if (/(общежит|жатақхана|dorm)/iu.test(s)) return "hostel";
   if (/(справк|заявлен|документ|құжат|certificate)/iu.test(s)) return "documents";
-  if (/(академ.*отпуск|академиялық.*демалыс)/iu.test(s)) return "academic_leave";
+  if (/(academ.*отпуск|академиялық.*демалыс)/iu.test(s)) return "academic_leave";
   return "other";
 }
 
@@ -1490,18 +1547,88 @@ app.post("/api/student/chat", async (req, res) => {
     !!lastAssistantAnswer &&
     normalizeKbText(String(lastAssistantAnswer || "")) === normalizeKbText(bestKb.entry.answer) &&
     meaningfullyDifferentQuestion(lastUserQuestion, lastAnchorUserQuestion);
-  // Direct KB reply only when confidence is strong by question semantics (avoid wrong answer by one shared word).
+  // --- CLARIFICATION PATH ---
+  // If the query is short/ambiguous and the top-2 KB matches belong to different categories or intents,
+  // ask the student to clarify rather than guessing the wrong topic (required behavior per Q&A policy).
+  const userQueryTokenCount = tokenizeKbText(lastUserQuestion).size;
+  const topClarifyMatches = ranked.filter((r) => r.score >= 3.0).slice(0, 3);
+  const intentBest = topClarifyMatches[0] ? detectIntent(`${topClarifyMatches[0].entry.question} ${topClarifyMatches[0].entry.answer}`) : "other";
+  const intentSecond = topClarifyMatches[1] ? detectIntent(`${topClarifyMatches[1].entry.question} ${topClarifyMatches[1].entry.answer}`) : "other";
+  const topicsAreDifferent =
+    topClarifyMatches.length >= 2 &&
+    (intentBest !== intentSecond || topClarifyMatches[0].entry.category !== topClarifyMatches[1].entry.category);
+  const shouldAskClarification =
+    !topicLock &&
+    !isFollowupUserQuestion(lastUserQuestion) &&
+    !hardIntentShift &&
+    userQueryTokenCount <= 5 &&
+    topicsAreDifferent &&
+    topClarifyMatches.length >= 2 &&
+    (topClarifyMatches[0].score - topClarifyMatches[1].score) < 2.5;
+
+  if (shouldAskClarification) {
+    const options = topClarifyMatches
+      .map((r, i) => `${i + 1}. ${r.entry.question}`)
+      .join("\n");
+    return res.json({
+      reply: `Уточните, пожалуйста, о чём именно вы спрашиваете. Возможно, вы имеете в виду один из следующих вопросов:\n\n${options}\n\nНапишите цифру или уточните формулировку.`,
+      source: "clarification",
+      kbQuestionNorm: null,
+      ...(debugRequested
+        ? {
+            debug: {
+              reason: "clarification",
+              intentNow,
+              userQueryTokenCount,
+              intentBest,
+              intentSecond,
+              topScores: topClarifyMatches.map((r) => ({ q: r.entry.question, score: r.score })),
+            },
+          }
+        : {}),
+    });
+  }
+
+  // --- NO GOOD MATCH PATH ---
+  // If there is no KB entry with sufficient confidence AND it is not a site-usage question,
+  // direct to SSC instead of calling LLM (prevents hallucination outside the approved Q&A base).
+  // Site-usage questions (how to use queue, statuses, booking, etc.) are handled by SITE_GUIDE via LLM.
+  const KB_MIN_SCORE_FOR_LLM = 3.5;
+  const isSiteQuestion = isSiteUsageQuery(lastUserQuestion);
+  if (!bestKb || (bestKb.score < KB_MIN_SCORE_FOR_LLM && !isLocationCabinetQuery(lastUserQuestion) && !isSiteQuestion)) {
+    return res.json({
+      reply:
+        "По данному вопросу информации нет. Пожалуйста, обратитесь в Студенческий сервисный центр (SSC uni-q, **каб. 123**) — специалисты смогут ответить лично.",
+      source: "no_kb_match",
+      kbQuestionNorm: null,
+      ...(debugRequested
+        ? {
+            debug: {
+              reason: "no_kb_match",
+              intentNow,
+              isSiteQuestion,
+              bestScore: bestKb?.score ?? null,
+              KB_MIN_SCORE_FOR_LLM,
+            },
+          }
+        : {}),
+    });
+  }
+
+  // Direct KB reply when confidence is strong enough by question semantics.
   const canReplyDirectKb =
     !!bestKb &&
-    (bestKb.questionScore >= 8.0 || (bestKb.score >= 8.8 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.4 && bestKb.aOverlap >= 3)) &&
+    (bestKb.questionScore >= 6.5 || (bestKb.score >= 8.0 && bestKb.qOverlap >= 2) || (bestKb.score >= 9.0 && bestKb.aOverlap >= 3)) &&
     (!secondKb || bestKb.score - secondKb.score >= 0.9) &&
     !repeatedAnswer &&
     !hardIntentShift;
+  // Location/navigation queries ("где", "как найти", "как дойти" etc.) get a lower score threshold
+  // so paraphrased location questions return the same direct KB answer as "где X?".
   const locationFallback =
     !!bestKb &&
     isLocationCabinetQuery(lastUserQuestion) &&
     answerHasCabinetInfo(bestKb.entry.answer) &&
-    bestKb.score >= 4.6;
+    bestKb.score >= 3.2;
   if ((canReplyDirectKb || locationFallback) && bestKb) {
     return res.json({
       reply: bestKb.entry.answer.trim(),
@@ -1547,12 +1674,13 @@ app.post("/api/student/chat", async (req, res) => {
     model: UNIQ_NVIDIA_CHAT_MODEL,
     messages: [
       { role: "system", content: STUDENT_CHAT_SYSTEM },
+      { role: "system", content: `SITE_GUIDE:\n${UNIQ_SITE_GUIDE}` },
       { role: "system", content: kbContext },
       { role: "system", content: dialogKbContext },
       ...cleaned,
     ],
     max_tokens: 1024,
-    temperature: 0.6,
+    temperature: 0.1,
     stream: false,
   };
 

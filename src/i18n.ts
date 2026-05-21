@@ -314,11 +314,11 @@ const dict: Record<Lang, Record<string, string>> = {
     mapBody:
       "Корпус главный, 2-й этаж. Зона приёма — площадь у лифтов. Окна A–D: по табло «Ваш номер» подойдите к указанному окну.",
     chatbotBtn: "Чат-помощник",
-    chatbotHint: "ИИ-консультант по электронной очереди",
+    chatbotHint: "ИИ-консультант: очередь, сайт и вопросы студентов",
     chatWidgetTitle: "Чат-помощник",
     chatWidgetSubtitle: "Центр консультаций",
     chatWidgetWelcome:
-      "Здравствуйте! Я помогу с вопросами об электронной очереди uni-q: как встать в очередь, бронь времени, ожидание и отмена. Напишите вопрос и нажмите «Отправить».",
+      "Здравствуйте! Я помогу с вопросами о работе сайта uni-q (очередь, бронирование, статусы, схема офиса) и по базе из 1300 частых студенческих вопросов. Напишите вопрос и нажмите «Отправить».",
     chatWidgetPlaceholder: "Ваш вопрос…",
     chatWidgetSend: "Отправить",
     chatWidgetAfterSend:
@@ -435,6 +435,16 @@ const dict: Record<Lang, Record<string, string>> = {
     studentEntryMicrosoftBtn: "Войти через Microsoft",
     studentEntryMicrosoftStub: "Вход через Microsoft скоро будет доступен.",
     studentEntryContinueBtn: "Продолжить без входа",
+    howItWorksTitle: "Как пользоваться системой",
+    howItWorksStep1Title: "Заполните форму",
+    howItWorksStep1Desc: "Укажите имя, школу, специальность и курс — и нажмите «Получить талон».",
+    howItWorksStep2Title: "Получите номер",
+    howItWorksStep2Desc: "Вам присваивается порядковый номер. Позиция в очереди обновляется в реальном времени.",
+    howItWorksStep3Title: "Ожидайте вызова",
+    howItWorksStep3Desc: "Когда подойдёт ваша очередь — прозвучит сигнал и появится номер окна (A–D).",
+    howItWorksStep4Title: "Подойдите к окну",
+    howItWorksStep4Desc: "Подойдите к указанному окну на 2-м этаже. После приёма оцените визит.",
+    howItWorksBookingHint: "Хотите выбрать удобное время? Используйте кнопку «Забронировать время» в панели студента.",
   },
   eng: {
     appTagline: "advising queue",
@@ -675,11 +685,11 @@ const dict: Record<Lang, Record<string, string>> = {
     mapBody:
       "Main building, 2nd floor. Reception zone near the elevators. Windows A–D: when your number is called, go to the desk shown.",
     chatbotBtn: "Chat assistant",
-    chatbotHint: "AI assistant for the e-queue",
+    chatbotHint: "AI assistant: queue, website & student questions",
     chatWidgetTitle: "Chat assistant",
     chatWidgetSubtitle: "Consultation center",
     chatWidgetWelcome:
-      "Hi! I can help with uni-q: joining the queue, booking a slot, waiting, and cancellation. Type your question and tap Send.",
+      "Hi! I can help with how uni-q works (queue, booking, statuses, office map) and with questions from the official 1300 student Q&A database. Type your question and tap Send.",
     chatWidgetPlaceholder: "Your question…",
     chatWidgetSend: "Send",
     chatWidgetAfterSend:
@@ -794,6 +804,16 @@ const dict: Record<Lang, Record<string, string>> = {
     studentEntryMicrosoftBtn: "Sign in with Microsoft",
     studentEntryMicrosoftStub: "Microsoft sign-in will be available soon.",
     studentEntryContinueBtn: "Continue without sign-in",
+    howItWorksTitle: "How it works",
+    howItWorksStep1Title: "Fill in the form",
+    howItWorksStep1Desc: "Enter your name, school, specialty and year — then press \"Get ticket\".",
+    howItWorksStep2Title: "Get your number",
+    howItWorksStep2Desc: "You are assigned a queue number. Your position updates in real time.",
+    howItWorksStep3Title: "Wait for your call",
+    howItWorksStep3Desc: "When it is your turn, a sound plays and your window number (A–D) appears.",
+    howItWorksStep4Title: "Go to the window",
+    howItWorksStep4Desc: "Head to the indicated window on the 2nd floor. Rate your visit afterwards.",
+    howItWorksBookingHint: "Want a specific time? Use the \"Book a time slot\" button in the student panel.",
   },
   kaz: {
     appTagline: "кеңес беру кезегі",
@@ -1036,11 +1056,11 @@ const dict: Record<Lang, Record<string, string>> = {
     mapBody:
       "Негізгі корпус, 2-қабат. Лифт маңындағы аймақ. A–D терезелері: табло бойынша көрсетілген терезеге барыңыз.",
     chatbotBtn: "Чат-көмекші",
-    chatbotHint: "Электрондық кезек жөнінде ЖИ көмекшісі",
+    chatbotHint: "ЖИ көмекші: кезек, сайт және студент сұрақтары",
     chatWidgetTitle: "Чат-көмекші",
     chatWidgetSubtitle: "Кеңес орталығы",
     chatWidgetWelcome:
-      "Сәлеметсіз бе! Мен uni-q электрондық кезегі туралы көмектесемін: кезекке тұру, уақыт брондау, күту және бас тарту. Сұрағыңызды жазыңыз да «Жіберу» басыңыз.",
+      "Сәлеметсіз бе! Мен uni-q сайтының жұмысы (кезек, брондау, мәртебелер, кеңсе схемасы) және 1300 жиі қойылатын сұрақтар базасы бойынша көмектесемін. Сұрағыңызды жазыңыз да «Жіберу» басыңыз.",
     chatWidgetPlaceholder: "Сұрағыңыз…",
     chatWidgetSend: "Жіберу",
     chatWidgetAfterSend:
@@ -1157,6 +1177,16 @@ const dict: Record<Lang, Record<string, string>> = {
     studentEntryMicrosoftBtn: "Microsoft арқылы кіру",
     studentEntryMicrosoftStub: "Microsoft арқылы кіру жақында қолжетімді болады.",
     studentEntryContinueBtn: "Кірмей жалғастыру",
+    howItWorksTitle: "Жүйені қалай пайдалануға болады",
+    howItWorksStep1Title: "Нысанды толтырыңыз",
+    howItWorksStep1Desc: "Аты-жөніңізді, мектебіңізді, мамандығыңызды және курсыңызды енгізіп, «Талон алу» батырмасын басыңыз.",
+    howItWorksStep2Title: "Нөміріңізді алыңыз",
+    howItWorksStep2Desc: "Сізге кезектегі рет нөмірі беріледі. Позиция нақты уақытта жаңартылады.",
+    howItWorksStep3Title: "Шақыруды күтіңіз",
+    howItWorksStep3Desc: "Кезегіңіз жеткенде дыбыстық сигнал шығады және терезе нөмірі (A–D) экранда көрінеді.",
+    howItWorksStep4Title: "Терезеге барыңыз",
+    howItWorksStep4Desc: "2-қабаттағы көрсетілген терезеге барыңыз. Қабылдаудан кейін бағалаңыз.",
+    howItWorksBookingHint: "Ыңғайлы уақыт таңдағыңыз келе ме? Студент панеліндегі «Уақытты брондау» батырмасын пайдаланыңыз.",
   },
 };
 
